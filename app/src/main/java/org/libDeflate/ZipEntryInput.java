@@ -7,7 +7,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 public class ZipEntryInput extends InputStream {
  public static MethodHandle unwarp;
@@ -27,10 +26,15 @@ public class ZipEntryInput extends InputStream {
   this.io = io;
   this.src = src;
  }
- public static InputStream getRaw(InputStream io, ZipEntry en) throws Throwable {  
-  if (en.getMethod() == 0)
-   return io;
-  else return new ZipEntryInput(io, (InputStream)unwarp.invokeExact((FilterInputStream)io));
+ public static InputStream getRaw(InputStream io, ZipEntry en) {  
+  if (en.getMethod() == 0)return io;
+  else {
+   try {
+    return new ZipEntryInput(io, (InputStream)unwarp.invokeExact((FilterInputStream)io));
+   } catch (Throwable e) {
+   }
+  }
+  return null;
  }
  public int read() {
   throw new RuntimeException();

@@ -1,51 +1,53 @@
 package org.libDeflate;
+import java.util.Vector;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.LongAdder;
+import java.io.IOException;
 
-public class ErrorHandler {
- public ParallelDeflate para;
- public boolean lock;
- public boolean ignore;
- public volatile Exception ex;
- public ErrorHandler(ParallelDeflate para) {
-  this.para = para;
+public abstract class ErrorHandler {
+ public volatile Vector<Future> flist=new Vector();
+ public ExecutorService pool;
+ public LongAdder io=new LongAdder();
+ public boolean igron;
+ public Vector<Throwable> err=new Vector();
+ public Canceler can;
+ public ErrorHandler(ExecutorService pool, Canceler can) {
+  this.pool = pool;
+  this.can = can;
  }
- public boolean onError(Exception err) {
-  if (para.flist != null && !(err instanceof InterruptedException)) {
-   Exception e=ex;
-   if (e == null) {
-    synchronized (this) {
-     if ((e = ex) == null)ex = err;
-    }
-   }
-   if (e != null)e.addSuppressed(err);
-   if (!ignore)return para.cancel();
-  }
-  return false;
+ public void add(Callable call) throws IOException {
+  if (!igron && err.size() > 0)throw new IOException();
+  io.increment();
+  addN(call);
  }
- public void setlock() {
-  if (para.async)lock = true;
+ public void addN(Callable call) {
+  flist.add(pool.submit(call));
  }
- public void lock() throws Exception {
-  if (lock) {
-   LongAdder io=para.io;
-   if (io.sum() > 0) {
-    synchronized (io) {
-     io.wait();
-    }
-   }
-   Exception e=ex;
-   if (e != null)throw e;
+ public boolean iscancel() {
+  return flist == null;
+ }
+ public void pop() {
+  io.decrement();
+  if (io.sum() < 0) {
+   if (flist != null)can.end();
+   onClose();
   }
  }
- public void unlock() {
-  if (lock) {
-   LongAdder io=para.io;
-   synchronized (io) {
-    io.notifyAll();
-   }
+ public void onError(Throwable e) {
+  if (e instanceof InterruptedException)return;
+  err.add(e);
+  if (!igron)can.cancel();
+ }
+ public boolean cancel() {
+  Vector<Future> list=flist;
+  this.flist = null;
+  if (list == null)return false;
+  for (Future fu:list) {
+   fu.cancel(true);
   }
+  return true;
  }
- public void onClose() {
-  unlock();
- }
+ public abstract void onClose();
 }

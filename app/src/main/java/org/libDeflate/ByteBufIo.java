@@ -2,9 +2,10 @@ package org.libDeflate;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
 
-public class ByteBufIo extends OutputStream implements WritableByteChannel {
+public class ByteBufIo extends OutputStream implements BufIo {
  public void write(int b) {
   throw new RuntimeException();
  }
@@ -12,96 +13,107 @@ public class ByteBufIo extends OutputStream implements WritableByteChannel {
   return true;
  }
  public ByteBuffer buf;
- public OutputStream out;
  public WritableByteChannel wt;
- public ByteBufIo(OutputStream out, int size) {
-  buf = ByteBuffer.allocate(size);
-  this.out = out;
- }
  public ByteBufIo(WritableByteChannel out, int size) {
   wt = out;
-  buf = ByteBuffer.allocateDirect(size);
+  ByteBuffer buf = ByteBuffer.allocateDirect(size);
+  buf.order(ByteOrder.LITTLE_ENDIAN);
+  this.buf = buf;
  }
  public void close() throws IOException {
   try {
    flush();
   } finally {
-   if (out != null)
-    out.close();
-   else wt.close();
+   wt.close();
   }
+ }
+ public ByteBuffer getBuf() {
+  return buf;
+ }
+ public ByteBuffer getBufFlush() throws IOException {
+  flush();
+  return buf;
  }
  public void flush() throws IOException {
   ByteBuffer buf=this.buf;
   if (buf == null)return;
-  OutputStream outs=out;
-  if (outs == null) {
-   buf.flip();
-   while (buf.hasRemaining())
-    wt.write(buf);
-  } else out.write(buf.array(), 0, buf.position());
+  buf.flip();
+  WritableByteChannel wt=this.wt;
+  while (buf.hasRemaining())
+   wt.write(buf);
   buf.clear();
  }
+ public ByteBuffer getBuf(int page) throws IOException {
+  ByteBuffer buf=this.buf;
+  int pos=buf.position();
+  int cy=buf.capacity() - page;
+  if (pos > cy) {
+   int len = pos & -4096;
+   WritableByteChannel wt=this.wt;
+   buf.rewind();
+   buf.limit(len);
+   while (buf.hasRemaining())
+    wt.write(buf);
+   buf.limit(pos);
+   buf.position(len); 
+   buf.compact();
+  }
+  return buf;
+ }
  public void put(byte brr[], int off, int len) throws IOException {
-  OutputStream outs=out;
-  if (outs == null) {
+  WritableByteChannel wt=this.wt;
+  if (wt != null) {
    ByteBuffer buf=ByteBuffer.wrap(brr, off, len);
    while (buf.hasRemaining())
     wt.write(buf);
-  } else outs.write(brr, off, len);
+  }
  }
  public void write(byte brr[], int off, int len) throws IOException {
   ByteBuffer buf=this.buf;
-  if (buf == null)throw new IOException();
   int cy=buf.capacity();
   int limt=buf.remaining();
   int wlen=len - limt;
   if (limt < cy || wlen < 0 || buf.isDirect())
    buf.put(brr, off, Math.min(len, limt));
-  if (wlen >= 0) {
+  else wlen = len;
+  if (wlen > 0) {
    flush();
    off += limt;
-   if (wlen >= cy)
-    put(brr, off , wlen);
-   else buf.put(brr, off, wlen);
+   if (wlen >= cy) {
+    int rlen=wlen & 4095;
+    put(brr, off , wlen & -4096);
+    off += wlen;
+    wlen = rlen;
+   }
+   buf.put(brr, off, wlen);
   }
  }
  public int write(ByteBuffer put) throws IOException {
-  int len=put.limit();
+  int len=put.remaining();
   int rsize=len;
   if (!put.isDirect()) {
-   write(put.array(), 0, len);
+   write(put.array(), put.position(), len);
   } else {
    ByteBuffer buf=this.buf;
-   if (buf == null)throw new IOException();
    int cy=buf.capacity();
    int limt=buf.remaining();
    int wlen=len - limt;
-   if (wlen > 0) {
-    if (!buf.isDirect()) {
-     if (len > cy) {
-      ByteBuffer old=buf;
-      this.buf = buf = buf.allocate(cy = len);
-      old.flip();
-      buf.put(old);
-     }
-     limt = buf.limit();
-    }
-    put.limit(limt);
-   }
-   if (limt < cy || wlen < 0 || !buf.isDirect())buf.put(put);
+   int rlen=put.limit();
+   if (wlen > 0)put.limit(put.position() + limt);
+   if (limt < cy || wlen < 0)buf.put(put);
    limt = put.position();
    wlen = len - limt;
-   if (wlen >= 0) {
+   if (wlen > 0) {
     flush();
-    put.limit(len);
     if (wlen >= cy) {
      WritableByteChannel wt=this.wt;
      if (wt != null) {
+      put.limit(limt + (wlen & -4096));
       while (put.hasRemaining())
        wt.write(put);
      }
     }
+    put.limit(rlen);
     buf.put(put);
    }
   }
