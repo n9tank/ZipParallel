@@ -116,20 +116,21 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   zipout.cancel();
   return;
  }
- public ByteBuffer deflate(ByteBuffer src, int size, ZipEntryM ze) throws IOException {
+ public ByteBuffer deflate(ByteBuffer src, int size, boolean wrok, ZipEntryM ze) throws IOException {
   LibdeflateCompressor def = new LibdeflateCompressor(ze.mode, 0);
   ByteBuffer buf;
   LibdeflateCRC32 crc;
+  size = LibdeflateJavaUtils.getBufSize(size, 0);
   if (!ze.notFix)crc = new LibdeflateCRC32();
   else crc = null;
   try {
-   buf = deflate(def, crc, zipout, src, null, size, true, ze);
+   buf = deflate(def, crc, zipout, src, null, size, size <= zipout.outPage && wrok, true, ze);
   } finally {
    def.close();
   }
   return buf;
  }
- public static ByteBuffer deflate(LibdeflateCompressor def, LibdeflateCRC32 crc, ZipEntryOutput out, ByteBuffer src, ByteBuffer put, int size, boolean add, ZipEntryM ze) throws IOException {
+ public static ByteBuffer deflate(LibdeflateCompressor def, LibdeflateCRC32 crc, ZipEntryOutput out, ByteBuffer src, ByteBuffer put, int size, boolean wrok, boolean add, ZipEntryM ze) throws IOException {
   src.flip();
   int readlen=src.limit();
   ByteBuffer buf;
@@ -140,21 +141,22 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    ze.crc = (int)crc.getValue();
   }
   if (put != null)put.clear();
-  if (size > 0) {
+  if (!wrok) {
    ze.notFix = true;
    buf = put == null || put.capacity() < size ?ByteBuffer.allocateDirect(size): put;
   } else {
    if (add)out.putEntry(ze, true);
-   buf = out.getBuf(out.outPage);
+   buf = out.getBuf(size);
+   //要减少这里的对齐导致性能下降应该扩大缓冲区，而是不是再分配内存。
   }
   int outlen=def.compress(src, buf);
-  if (size < 0 || !add)
+  if (wrok || !add)
    out.writeEntryModify(ze);
   ze.csize = outlen;
   src.clear();
-  if (size <= 0)out.upLength(outlen);
+  if (wrok)out.upLength(outlen);
   else buf.flip();
-  return size <= 0 ?null: buf;
+  return wrok ?null: buf;
  }
  public final static ExecutorService pool=new ForkJoinPool();
  public ConcurrentLinkedQueue list;
@@ -181,7 +183,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   io.flush();
   if (buf != null) {
    ByteBuffer src=buf.buf;
-   src = deflate(src, unIo(src.limit(), iswrok), zip);
+   src = deflate(src, src.limit(), iswrok, zip);
    if (src == null || (!iswrok && wrok.getAndSet(true)))return src;
    zipout.putEntry(zip, true);
    zipout.write(src);
@@ -203,20 +205,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   else
    on.add(new DeflateWriter(file, zip));
  }
- public int unIo(int size, boolean wroking) {
-  return unIo(zipout.outPage, size, wroking);
- }
- public static int unIo(int outpage, int size, boolean wroking) {
-  size = LibdeflateJavaUtils.getBufSize(size, 0);
-  if (size <= outpage && wroking)return 0;
-  return size;
- }
  public ByteBuffer addFile(File file, boolean working, ZipEntryM zip) throws IOException {
   FileChannel nio=new FileInputStream(file).getChannel();
   try {
    long size=nio.size();
    if (zip.mode > 0) {
-    ByteBuffer buf = deflate(nio.map(FileChannel.MapMode.READ_ONLY, 0, size), unIo((int)size, working), zip);
+    ByteBuffer buf = deflate(nio.map(FileChannel.MapMode.READ_ONLY, 0, size), (int)size, working, zip);
     nio.close();
     if (buf == null || (!working && wrok.getAndSet(true)))return buf;
     ZipEntryOutput data=zipout;
@@ -255,7 +249,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   try {
    int len=in.available();
    ZipEntryOutput zipout=this.zipout;
-   int size=LibdeflateJavaUtils.getBufSize(len, 0);
    boolean raw=len <= 8192 || !(in instanceof FilterInputStream);
    //数据量太小使用堆内内存交给JNI
    ByteBuffer outbuf = raw  ?ByteBuffer.allocate(len): ByteBuffer.allocateDirect(len);
@@ -266,7 +259,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
      outbuf.put(buf, 0, i);
    } else outbuf.position(readLoop(in, outbuf.array()));
    in.close();
-   ByteBuffer wtbuf=deflate(outbuf, size, zip);
+   ByteBuffer wtbuf=deflate(outbuf, len, wroking, zip);
    if (wtbuf == null || (!wroking && wrok.getAndSet(true)))return wtbuf;
    zipout.putEntry(zip, true);
    zipout.write(wtbuf);
