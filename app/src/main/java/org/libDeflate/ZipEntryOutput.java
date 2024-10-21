@@ -32,27 +32,22 @@ public class ZipEntryOutput extends ByteBufIo {
   public boolean isOpen() {
    return true;
   }
-  public BufIo getBufIo() {
-   ZipEntryOutput zip=ZipEntryOutput.this;
-   BufIo buf=((BufIo)(zip.entry.mode > 0 ?copy: zip));
-   return buf;
-  }
   public ByteBuffer getBuf() {
-   return getBufIo().getBuf();
+   ZipEntryOutput zip=ZipEntryOutput.this;
+   return (zip.entry.mode > 0 ?copy: zip).getBuf();
   }
   public ByteBuffer getBufFlush() throws IOException {
-   BufIo bufio = getBufIo();
-   if (bufio instanceof ZipEntryOutput) {
-    ZipEntryOutput zip=ZipEntryOutput.this;
-    if (!zip.entry.notFix) {
-     ByteBuffer buf=zip.buf;
-     int pos=buf.position();
-     buf.flip();
-     buf.position(zip.pos);
-     crc.update(buf);
-     buf.clear();
-     buf.position(pos);
-    }
+   ZipEntryOutput zip=ZipEntryOutput.this;
+   boolean raw;
+   BufIo bufio = ((raw = zip.entry.mode <= 0) ?zip: copy);
+   if (raw && !zip.entry.notFix) {
+    ByteBuffer buf=zip.buf;
+    int pos=buf.position();
+    buf.flip();
+    buf.position(zip.pos);
+    crc.update(buf);
+    buf.clear();
+    buf.position(pos);
    }
    return bufio.getBufFlush();
   }
@@ -103,11 +98,8 @@ public class ZipEntryOutput extends ByteBufIo {
    ZipEntryM en=zip.entry;
    if (en.mode > 0) {
     ByteBuffer src=copy.buf;
-    int size;
-    if (ParallelDeflate.unIo(zip.outPage, src.position(), true) > 0)
-     size = LibdeflateJavaUtils.getBufSize(src.capacity(), 0);
-    else size = 0;
-    ByteBuffer old = ParallelDeflate.deflate(def, crc, zip, src, this.old, size , false, en);
+    int size=LibdeflateJavaUtils.getBufSize(src.position(), 0);
+    ByteBuffer old = ParallelDeflate.deflate(def, crc, zip, src, this.old, size , size <= outPage, false, en);
     if (old != null) {
      zip.write(old);
      old.clear();
@@ -131,7 +123,7 @@ public class ZipEntryOutput extends ByteBufIo {
  public File outFile;
  public FileChannel rnio;
  public ZipEntryM entry;
- public byte flag=1;
+ public int flag=1;
  public CharsetEncoder charsetEncoder;
  public int outPage;
  public ByteBuffer tbuf;
@@ -170,7 +162,7 @@ public class ZipEntryOutput extends ByteBufIo {
   upLength(buf.position() - pos);
   flush();
   return buf;
- }  
+ }
  public void cancel() {
   File out=outFile;
   if (out != null) {
@@ -297,14 +289,17 @@ public class ZipEntryOutput extends ByteBufIo {
   boolean utf8;
   boolean skip;
   CharsetEncoder charsetEncoder=this.charsetEncoder;
+  int size=30;
   if ((flag & AsInput) > 0) {
    utf8 = zip.utf(charsetEncoder);
+   int n= zip.name.length();
+   size += utf8 ?n << 2: (int)(n * charsetEncoder.maxBytesPerChar());
    skip = false;
   } else {
    utf8 = false;
    skip = true;
   }
-  ByteBuffer buff=getBuf(1024);
+  ByteBuffer buff=getBuf(size);
   int pos=buff.position();
   buff.putInt(0x04034b50);
   putBits(buff, utf8, false, zip);
@@ -403,7 +398,8 @@ public class ZipEntryOutput extends ByteBufIo {
  public void writeEntryEnd(ZipEntryM zip) throws IOException {
   CharsetEncoder charsetEncoder=this.charsetEncoder;
   boolean utf8=zip.utf(charsetEncoder);
-  ByteBuffer buff=getBuf(1024);
+  int size=zip.name.length();
+  ByteBuffer buff=getBuf((utf8 ?size << 2: (int)(size * charsetEncoder.maxBytesPerChar())) + 46);
   int pos=buff.position();
   buff.putInt(0x02014b50);
   buff.putShort((short)0);

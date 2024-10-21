@@ -13,7 +13,7 @@ public class ZipInputGet implements InputGet {
  public boolean buf;
  public InputStream io() throws IOException {
   InputStream in=zip.getInputStream(en);
-  if (raw)in = ZipEntryInput.getRaw(in, en);
+  if (raw)in = ZipEntryInput.getRaw(in);
   else if (en.getMethod() > 0 && buf)
    in = new BufferedInputStream(in, Math.min(8192, in.available()));
   return in;

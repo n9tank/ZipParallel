@@ -11,34 +11,36 @@ public class ZipUtil {
  }
  public static void addRandomHead(ZipEntryOutput out, int rnd[]) throws Exception {
   int len=rnd.length;
-  if (len == 1) {
-   ByteBuffer buf=ByteBuffer.allocateDirect(4);
+  if (len <= 1) {
+   ByteBuffer buf=out.buf;
    buf.putInt(0x504b0304);
-   buf.flip();
-   out.write(buf);
+   out.upLength(4);
   } else {
    Random ran=new Random();
    int j=0;
    int all=0;
-   for (int i=len;--i > 0;) {
-    int n= ran.nextInt(rnd[i]) + rnd[--i];
+   int i=0;
+   do {
+    int n= ran.nextInt(rnd[i++]) + rnd[i++];
     all += n;
     rnd[j++] = n;
-   }
+   }while (i < len);
    byte[] buf=new byte[all];
    //由于输入页不能太多所以直接分配就好
    ran.nextBytes(buf);
-   for (int k=buf.length;--k >= 0;)
+   len=buf.length;
+   for (int k=0;k < len;++k)
     buf[k] &= 63;
    //让压缩工作
    int c=0;
    ZipEntryOutput.DeflaterIo def=out.outDef;
-   while (--j >= 0) {
-    int wlen=rnd[j];
+   i=0;
+   do{
+    int wlen=rnd[i];
     out.putEntry(newEntry(null, 1), false, true);
     def.write(buf, c, wlen);
     c += wlen;
-   }
+   }while(++i < j);
    out.closeEntry();
   }
  }
