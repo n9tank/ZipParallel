@@ -32,26 +32,22 @@ public class ZipEntryOutput extends ByteBufIo {
   public boolean isOpen() {
    return true;
   }
-  public BufIo getBufIo() {
-   ZipEntryOutput zip=ZipEntryOutput.this;
-   return zip.entry.mode > 0 ?copy: zip;
-  }
   public ByteBuffer getBuf() {
-   return getBufIo().getBuf();
+   ZipEntryOutput zip=ZipEntryOutput.this;
+   return (zip.entry.mode > 0 ?copy: zip).getBuf();
   }
   public ByteBuffer getBufFlush() throws IOException {
-   BufIo bufio = getBufIo();
-   if (bufio instanceof ZipEntryOutput) {
-    ZipEntryOutput zip=ZipEntryOutput.this;
-    if (!zip.entry.notFix) {
-     ByteBuffer buf=zip.buf;
-     int pos=buf.position();
-     buf.flip();
-     buf.position(zip.pos);
-     crc.update(buf);
-     buf.clear();
-     buf.position(pos);
-    }
+   ZipEntryOutput zip=ZipEntryOutput.this;
+   boolean raw;
+   BufIo bufio = ((raw = zip.entry.mode <= 0) ?zip: copy);
+   if (raw && !zip.entry.notFix) {
+    ByteBuffer buf=zip.buf;
+    int pos=buf.position();
+    buf.flip();
+    buf.position(zip.pos);
+    crc.update(buf);
+    buf.clear();
+    buf.position(pos);
    }
    return bufio.getBufFlush();
   }
@@ -127,7 +123,7 @@ public class ZipEntryOutput extends ByteBufIo {
  public File outFile;
  public FileChannel rnio;
  public ZipEntryM entry;
- public byte flag=1;
+ public int flag=1;
  public CharsetEncoder charsetEncoder;
  public int outPage;
  public ByteBuffer tbuf;
@@ -166,7 +162,7 @@ public class ZipEntryOutput extends ByteBufIo {
   upLength(buf.position() - pos);
   flush();
   return buf;
- }  
+ }
  public void cancel() {
   File out=outFile;
   if (out != null) {

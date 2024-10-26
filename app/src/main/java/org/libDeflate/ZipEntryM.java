@@ -8,14 +8,14 @@ import java.io.IOException;
 
 public class ZipEntryM {
  public byte mode;
- public String name;
+ public CharSequence name;
  public int csize;
  public int size=-1;
  public int crc;
  public int xdostime;
  public long start;
  public boolean notFix;
- public ZipEntryM(String str, int lvl) {
+ public ZipEntryM(CharSequence str, int lvl) {
   name = str;
   mode = (byte)lvl;
  }
@@ -40,7 +40,7 @@ public class ZipEntryM {
   return en == null || !en.canEncode(name);
  }
  public int encode(CharsetEncoder en, ZipEntryOutput zip, boolean utf) throws IOException {
-  String str=name;
+  CharSequence str=name;
   int len=0;
   ByteBufIo io=zip.rnio == null ?null: zip;
   ByteBuffer out=io.buf;

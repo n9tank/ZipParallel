@@ -12,10 +12,9 @@ public class ZipUtil {
  public static void addRandomHead(ZipEntryOutput out, int rnd[]) throws Exception {
   int len=rnd.length;
   if (len == 1) {
-   ByteBuffer buf=ByteBuffer.allocateDirect(4);
+   ByteBuffer buf=out.buf;
    buf.putInt(0x504b0304);
-   buf.flip();
-   out.write(buf);
+   out.upLength(4);
   } else {
    Random ran=new Random();
    int j=0;
