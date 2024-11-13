@@ -30,6 +30,7 @@ public class BufWriter extends Writer {
    buf = put.getBufFlush();
   while (en.flush(buf).isOverflow())
    buf = put.getBufFlush();
+  put.end();
   en.reset();
  }
  public void close() throws IOException {
