@@ -39,30 +39,14 @@ public class ZipEntryM {
  public boolean utf(CharsetEncoder en) {
   return en == null || !en.canEncode(name);
  }
- public int encode(CharsetEncoder en, ZipEntryOutput zip, boolean utf) throws IOException {
-  CharSequence str=name;
-  int len=0;
-  ByteBufIo io=zip.rnio == null ?null: zip;
-  ByteBuffer out=io.buf;
+ public int encode(CharsetEncoder en, ByteBuffer out) {
   int pos=out.position();
-  int cy=out.capacity() & -4096;
-  CharBuffer buf=CharBuffer.wrap(str);
-  CharsetEncoder cr=(utf ?zip.utf8: en);
-  while (cr.encode(buf, out, true).isOverflow()) {
-   len += out.position() - pos;
-   io.flush();
-   pos = out.position();
-   out.limit(cy);
-  }
-  while (cr.flush(out).isOverflow()) {
-   len += out.position() - pos;
-   io.flush();
-   pos = out.position();
-   out.limit(cy);
-  }
-  if (len > 0)len += out.position() - pos;
+  CharBuffer buf=CharBuffer.wrap(name);
+  en.encode(buf, out, true);
+  en.flush(out);
+  int len = out.position() - pos;
   out.limit(out.capacity());
-  cr.reset();
+  en.reset();
   return len;
  }
 }

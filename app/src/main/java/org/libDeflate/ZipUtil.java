@@ -28,17 +28,17 @@ public class ZipUtil {
    byte[] buf=new byte[all];
    //由于输入页不能太多所以直接分配就好
    ran.nextBytes(buf);
-   len=buf.length;
+   len = buf.length;
    for (int k=0;k < len;++k)
     buf[k] &= 63;
    //让压缩工作
    int c=0;
    ZipEntryOutput.DeflaterIo def=out.outDef;
-   i=0;
+   i = 0;
    do{
     int wlen=rnd[i];
+    def.src = ByteBuffer.wrap(buf, c, wlen);
     out.putEntry(newEntry(null, 1), false, true);
-    def.write(buf, c, wlen);
     c += wlen;
    }while(++i < j);
    out.closeEntry();

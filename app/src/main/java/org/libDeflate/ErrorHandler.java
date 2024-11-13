@@ -20,10 +20,11 @@ public abstract class ErrorHandler {
  public void add(Callable call) throws IOException {
   if (!igron && err.size() > 0)throw new IOException();
   io.increment();
-  addN(call);
+  flist.add(pool.submit(call));
  }
  public void addN(Callable call) {
-  flist.add(pool.submit(call));
+  if (flist == null)pop();
+  else flist.add(pool.submit(call));
  }
  public boolean iscancel() {
   return flist == null;
@@ -42,10 +43,16 @@ public abstract class ErrorHandler {
  }
  public boolean cancel() {
   Vector<Future> list=flist;
-  this.flist = null;
   if (list == null)return false;
+  synchronized (this) {
+   list = flist;
+   if (list != null)this.flist = null;
+   else return false;
+  }
   for (Future fu:list) {
-   fu.cancel(true);
+   boolean isrun=fu.cancel(true);
+   if (!isrun && !fu.isDone())
+    pop();
   }
   return true;
  }

@@ -8,9 +8,12 @@ import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.util.zip.ZipEntry;
 import java.util.zip.InflaterInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 
-public class ZipEntryInput extends InputStream {
+public class ZipEntryInput {
  public static MethodHandle unwarp;
+ public static MethodHandle seter;
  static{
   try {
    Class fid= FilterInputStream.class;
@@ -18,30 +21,20 @@ public class ZipEntryInput extends InputStream {
    Field fin=fid.getDeclaredField("in");
    fin.setAccessible(true);
    unwarp = lookup.unreflectGetter(fin);
+   seter = lookup.unreflectSetter(fin);
   } catch (Throwable e) {
   }  
  }
- InputStream io;
- InputStream src;
- public ZipEntryInput(InputStream io, InputStream src) {
-  this.io = io;
-  this.src = src;
- }
  public static InputStream getRaw(InputStream io) {
-  if (!(io instanceof InflaterInputStream))return io;
+  if (!(io instanceof FilterInputStream))return io;
   try {
-   return new ZipEntryInput(io, (InputStream)unwarp.invokeExact((FilterInputStream)io));
+   FilterInputStream in=(FilterInputStream)io;
+   InputStream nio=(InputStream)unwarp.invokeExact(in);
+   seter.invokeExact(in, (InputStream)new ByteArrayInputStream(new byte[0]));
+   io.close();
+   return nio;
   } catch (Throwable e) {
   }
   return null;
- }
- public int read() {
-  throw new RuntimeException();
- }
- public int read(byte[] b, int off, int len) throws IOException {
-  return src.read(b, off, len);
- }
- public void close() throws IOException {
-  io.close();
  }
 }
