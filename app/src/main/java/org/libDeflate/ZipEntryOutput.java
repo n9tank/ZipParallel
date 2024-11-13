@@ -36,6 +36,11 @@ public class ZipEntryOutput extends ByteBufIo {
    ZipEntryOutput zip=ZipEntryOutput.this;
    return (zip.entry.mode > 0 ?copy: zip).getBuf();
   }
+  public ByteBuffer getBuf(int size) {
+   return null;
+  }
+  public void restMark() {
+  }
   public ByteBuffer getBufFlush() throws IOException {
    ZipEntryOutput zip=ZipEntryOutput.this;
    boolean raw;
@@ -340,7 +345,7 @@ public class ZipEntryOutput extends ByteBufIo {
   buff.putInt(size);
   upLength(16);
  }
- public void finish(ZipEntryM[] badlist) throws IOException {
+ public void finish() throws IOException {
   closeEntry();
   outDef.free();
   FileChannel nio=rnio;
@@ -355,10 +360,6 @@ public class ZipEntryOutput extends ByteBufIo {
   }
   if ((flag & onlyInput) == 0) {
    long size=off;
-   if (badlist != null) {
-    Collections.addAll(list, badlist);
-    Collections.shuffle(list);
-   }
    for (ZipEntryM ze:list) {
     writeEntryEnd(ze);
    }
@@ -368,7 +369,7 @@ public class ZipEntryOutput extends ByteBufIo {
  }
  public void close() throws IOException {
   try {
-   if (list != null) finish(null);
+   if (list != null) finish();
   } finally {
    ZipEntryOutput.DeflaterIo out=outDef;
    if (out != null) {

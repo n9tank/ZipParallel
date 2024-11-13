@@ -24,6 +24,11 @@ public class BufOutput implements BufIo {
  public ByteBuffer getBuf(){
   return buf;
  }
+ public ByteBuffer getBuf(int size) {
+  return null;
+ }
+ public void restMark() {
+ }
  public ByteBuffer getBufFlush() {
   ByteBuffer old=this.buf;
   ByteBuffer buf=ByteBuffer.allocateDirect(old.capacity() << 1);

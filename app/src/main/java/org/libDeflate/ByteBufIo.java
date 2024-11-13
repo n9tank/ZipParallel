@@ -60,6 +60,8 @@ public class ByteBufIo extends OutputStream implements BufIo {
   }
   return buf;
  }
+ public void restMark() {
+ }
  public void put(byte brr[], int off, int len) throws IOException {
   WritableByteChannel wt=this.wt;
   if (wt != null) {
