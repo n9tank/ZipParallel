@@ -4,22 +4,34 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousByteChannel;
 import java.nio.channels.CompletionHandler;
 import java.util.ArrayList;
-import java.util.concurrent.atomic.LongAdder;
 import java.util.Vector;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.Lock;
 
 public class AioAuto implements BufIo,CompletionHandler {
  public void completed(Object result, Object attachment) {
-  Object lock=attachment;
-  if (lock instanceof longkv) {
+  long block[]=this.block;
+  if (attachment instanceof longkv) {
    synchronized (blockBuf) {
-	blockBuf.remove(lock);
+	blockBuf.remove(attachment);
+   }
+   synchronized (attachment) {
+	attachment.notifyAll();
    }
   } else {
-   int i= (Integer)attachment;
-   ByteBuffer buf=buff[i];
-   lock = buf;
-   buf.clear();
-   block[i] = 0;
+   ByteBuffer buf=(ByteBuffer)attachment;
+   clearBlock(buf);
+   int i=getOff(buf);
+   int cy=buf.capacity() / buff[0].capacity();
+   while (--cy >= 0) {
+	block[i] = 0;
+	buf = buff[i++];
+	synchronized (buf) {
+	 buf.notifyAll();
+	}
+   }
   }
   cou.decrement();
   long sum=cou.sum();
@@ -28,8 +40,8 @@ public class AioAuto implements BufIo,CompletionHandler {
 	this.notifyAll();
    }
   }
-  synchronized (lock) {
-   lock.notifyAll();
+  synchronized (block) {
+   block.notify();
   }
  }
  public Vector<Throwable> err=new Vector();
@@ -43,56 +55,68 @@ public class AioAuto implements BufIo,CompletionHandler {
   }
  }
  public ByteBuffer getBuf() {
-  int i=indexOf(0);
-  while (i < 0)i = indexOfSync();
-  return buff[mark = i];
- }
- public int indexOfSync() {
-  synchronized (block) {
-   try {
-	block.wait();
-   } catch (InterruptedException e) {}
-   return indexOfAll(0);
-  }
- }
- public int mark;
- public int lastmark;
- public ByteBuffer getBuf(int size) throws IOException {
-  if (size > buff[0].capacity())return null;
-  lastmark = -1;
-  int i = indexOf(0);
-  int real=0;
-  ByteBuffer buff[]=this.buff;
-  while (true) {
-   ByteBuffer buf;
-   if (lastmark < 0) {
-	while (i < 0)i = indexOfSync();
-	buf = buff[i];
-	if (buf.remaining() < size) {
-	 lastmark = i;
-	 continue;
-	} else {
-	 mark = i;
-	 return buf;
+  int i;
+  try {
+   synchronized (block) {
+	i = indexOf(0);
+	while (i < 0) {
+	 block.wait();
+	 i = lastIn = indexOfAll(0);
 	}
-   } else {
-	real = indexOfAll(real);
-	while (real < 0)real = indexOfSync();
-	buf = buff[real];
-	if (buf.remaining() < size)continue;
-	mark = real;
-	lastIn = real;
-	return buf;
+   }
+   return mark = buff[i];
+  } catch (InterruptedException e) {}
+  return null;
+ }
+ public ReadWriteLock lock;
+ public ByteBuffer mark;
+ public ByteBuffer lastMark;
+ public ByteBuffer getBuf(int size) {
+  lastMark = null;
+  int i=indexOf(0);
+  ByteBuffer last=i < 0 ?null: buff[i];
+  if (last != null && last.remaining() >= size)
+   return mark = last;
+  ByteBuffer buf=getBlockSync(last, size);
+  if (buf.position() > 0 && buf.remaining() < size) {
+   ByteBuffer next= getBlockSync(null, size);
+   if (next.arrayOffset() != buf.arrayOffset()) {
+	lastMark = buf;
+	buf = next;
    }
   }
+  return mark = buf;
+ }
+ public ByteBuffer getBlock(ByteBuffer last, int size) {
+  ArrayList<ByteBuffer> list=getBlocks();
+  if (last != null && last.position() > 0) {
+   int c = findBlockHasByte(list, getOff(last));
+   if (c >= 0)last = list.get(c);
+  } else {
+   int c=findBlockOrSmail(list, size);
+   if (c >= 0)last = list.get(c);
+  }
+  return last;
+ }
+ public ByteBuffer getBlockSync(ByteBuffer last, int size) {
+  try {
+   synchronized (block) {
+	while (true) {
+	 last = getBlock(last, size);
+	 if (last == null)
+	  block.wait();
+	 else break;
+	}
+   }
+  } catch (InterruptedException e) {
+   last = null;
+  }
+  return last;
  }
  public void restMark() {
-  int last=lastmark;
-  int mark=this.mark;
-  ByteBuffer buff[]=this.buff;
-  ByteBuffer src=buff[mark];
-  if (last >= 0) {
-   ByteBuffer drc=buff[last];
+  ByteBuffer drc=lastMark;
+  ByteBuffer src=this.mark;
+  if (drc != null) {
    int pos=src.position();
    src.flip();
    int len=drc.remaining();
@@ -101,7 +125,7 @@ public class AioAuto implements BufIo,CompletionHandler {
    src.limit(pos);
    src.position(len);
    src.compact();
-   release(last, true);
+   release(drc, true);
   }
   release(mark, false);
  }
@@ -113,13 +137,13 @@ public class AioAuto implements BufIo,CompletionHandler {
   ByteBuffer buff[]=this.buff;
   int cy=buff[0].capacity();
   for (int i=0,len=block.length;i < len;++i) {
-   long j=block[i];
-   if (j > 0 && j > pos && j - cy <= pos) {
-	ByteBuffer buf=buff[i];
-	synchronized (buf) {
+   ByteBuffer buf=buff[i];
+   synchronized (buf) {
+	long j=block[i];
+	if (j > 0 && j > pos && j - cy <= pos) {
 	 buf.wait();
+	 return;
 	}
-	return;
    }
   }
   synchronized (blockBuf) {
@@ -137,63 +161,73 @@ public class AioAuto implements BufIo,CompletionHandler {
  }
  public void flush() {
   for (int i=0,len=buff.length;i < len;++i) {
-   if (block[i] == 0 && buff[i].position() > 0)
-	release(i, true);
+   ByteBuffer buf=buff[i];
+   if (block[i] == 0 && buf.position() > 0)
+	release(buf, true);
   }
+ }
+ public void waitIo() throws InterruptedException {
   if (cou.sum() > 0) {
    synchronized (this) {
-	try {
-	 this.wait();
-	} catch (InterruptedException e) {}
+	this.wait();
    }
   }
  }
  public void close() throws IOException {
   flush();
+  try {
+   waitIo();
+  } catch (InterruptedException e) {}
   fio.close();
  }
  public boolean isOpen() {
   return true;
  }
  public void writeFast(ByteBuffer src) {
-  int len=src.remaining();
-  while (len > 0) {
-   int i= indexOf(0);
-   if (i < 0) {
-	src.limit(src.position() + len);
-	insertBuffer(src);
-	return;
-   } else {
-	ByteBuffer buf=buff[i];
-	if (buf.position() == 0 && len >= buf.capacity()) {
-	 src.limit(src.position() + len);
-	 insertBuffer(src);
-	 return;
-	}
-	int size;
-	src.limit(src.position() + (size = Math.min(len, buf.remaining())));
-	len -= size;
+  int i= indexOf(0);
+  if (i < 0) {
+   insertBuffer(src);
+   return;
+  } else {
+   ByteBuffer buf=buff[i];
+   if (buf.position() > 0) {
+	int lt=src.limit();
+	src.limit(src.position() + Math.min(src.remaining(), buf.remaining()));
 	buf.put(src);
-	release(i, false);
+	src.limit(lt);
+	release(buf, false);
    }
+   int len;
+   if ((len = src.remaining()) < buf.capacity() && (i = (lastIn = indexOfAll(0))) >= 0) {
+	buf = buff[i];
+	int lt=src.limit();
+	src.limit(src.position() + len);
+	buf.put(src);
+	src.limit(lt);
+	release(buf, false);
+   }
+   if (src.remaining() > 0)
+	insertBuffer(src);
   }
  }
  public int write(ByteBuffer src) {
-  ByteBuffer buf=getBuf();
   int len=src.remaining();
+  int i=indexOf(0);
+  ByteBuffer last=i <= 0 ?null: buff[i];
   while (len > 0) {
-   while (buf.hasRemaining()) {
-	int size;
-	src.limit(src.position() + (size = Math.min(len, buf.remaining())));
-	len -= size;
-	buf.put(src);
-   }
-   buf = getBufFlush();
+   if (last != null && last.remaining() < len)
+	last = getBlockSync(last, len);
+   int size;
+   src.limit(src.position() + (size = Math.min(len, last.remaining())));
+   len -= size;
+   last.put(src);
+   release(last, false);
   }
   return len;
  }
  public AsynchronousByteChannel fio;
  public volatile ByteBuffer buff[];
+ public ByteBuffer src;
  public static class longkv {
   public long start;
   public int len;
@@ -207,19 +241,23 @@ public class AioAuto implements BufIo,CompletionHandler {
   int cy=buf.remaining();
   int block0=cy & -4096;
   if (block0 > 0) {
-   int i=indexOf(0);
-   if (i >= 0) {
-	ByteBuffer abuf=buff[i];
-	int pos=buf.position();
-	if (pos == 0) {
-	 buf.position(cy -= block0);
+   while (block0 > 0) {
+	int i=indexOf(0);
+	if (i >= 0) {
+	 ByteBuffer abuf = buff[i];
+	 if (abuf.remaining() < block0)
+	  abuf = getBlock(abuf, block0);
+	 int pos=buf.position();
+	 int lt=buf.limit();
+	 int size=Math.min(abuf.remaining(), block0);
+	 block0 -= size;
+	 buf.limit(pos + size);
 	 abuf.put(buf);
-	 buf.rewind();
-	 buf.limit(cy);
-	}
+	 buf.limit(lt);
+	 release(abuf, false);
+	} else break;
    }
   }
-  buf.flip();
   longkv lock;
   synchronized (blockBuf) {
    blockBuf.add(lock = new longkv(pos, cy));
@@ -234,28 +272,105 @@ public class AioAuto implements BufIo,CompletionHandler {
  public AioAuto(AsynchronousByteChannel f, int size, int fame) {
   fio = f;
   blockBuf = new ArrayList();
+  ByteBuffer all;
+  lock = new ReentrantReadWriteLock();
+  src = all = ByteBuffer.allocateDirect(size * fame);
   ByteBuffer[] buf=new ByteBuffer[fame];
   block = new long[fame];
   cou = new LongAdder();
   buff = buf;
   for (int i=0;i < fame;++i) {
-   buf[i] = ByteBuffer.allocateDirect(size);
+   int k=size * fame;
+   all.limit(k);
+   all.position(k - size);
+   buf[i] = all.slice();
   }
  }
- public void release(int i, boolean or) {
-  ByteBuffer buf=buff[i];
-  int cy=buf.remaining();
-  if (or || buf.position() == buf.capacity()) {
-   block[i] = pos += cy;
-   buf.flip();
+ public void release(ByteBuffer buf, boolean or) {
+  int len=buf.position();
+  int cy=buff[0].capacity();
+  int i=getOff(buf);
+  if (or || len >= cy) {
+   while (or ?len > 0: len >= cy) {
+	block[i++] = pos += cy;
+	len -= cy;
+   }
+   if (!or && len > 0) {
+	lastIn = i;
+	buff[i].position(len);
+	int pos=buf.position() - len;
+	buf.rewind();
+	buf.limit(pos);
+	buf = buf.slice();
+   } else buf.flip();
    cou.increment();
-   fio.write(buf, i, this);
-  }
+   fio.write(buf, buf, this);
+  } else lastIn = i;
  }
- public volatile int lastIn;
+ public volatile int lastIn=-1;
+ public ArrayList<ByteBuffer> getBlocks() {
+  int pos=-1;
+  int i=0;
+  ArrayList<ByteBuffer> buf=new ArrayList();
+  while (i >= 0) {
+   int n= indexOfAll(i);
+   if (i + 1 != n || i < 0) {
+	if (pos >= 0 && (i - pos) > 1)
+	 buf.add(block(pos, i));
+	pos = -1;
+   } else if (pos < 0 && buff[n].position() == 0) 
+	pos = i;
+   i = n;
+  }
+  return buf;
+ }
+ public int findBlockHasByte(ArrayList<ByteBuffer> arr, int in) {
+  for (int i=0,len=arr.size();i < len;++i) {
+   ByteBuffer buf=arr.get(i);
+   if (getOff(buf) != in)continue;
+   return i;
+  }
+  return -1;
+ }
+ public int findBlockOrSmail(ArrayList<ByteBuffer> arr, int size) {
+  int cy=buff[0].capacity();
+  while (size >= cy) {
+   int buf=findBlock(arr, size);
+   if (buf >= 0)return buf;
+   size -= cy;
+  }
+  int c=indexOfAll(0);
+  return c < 0 ?-1: c;
+ }
+ public int findBlock(ArrayList<ByteBuffer> arr, int size) {
+  for (int i=0,len=arr.size();i < len;++i) {
+   ByteBuffer buf=arr.get(i);
+   if (buf.remaining() < size)continue;
+   return i;
+  }
+  return -1;
+ }
+ public int getOff(ByteBuffer buf) {
+  return buf.arrayOffset() / buff[0].capacity();
+ }
+ public void clearBlock(ByteBuffer buf) {
+  int off= getOff(buf);
+  buff[off].clear();
+  buf.clear();
+ }
+ public ByteBuffer block(int pos, int end) {
+  ByteBuffer src=this.src;
+  ByteBuffer buf=buff[pos];
+  int cy=buf.capacity();
+  src.position(pos * cy);
+  src.limit(end * cy);
+  ByteBuffer ret=src.slice();
+  ret.position(buf.position());
+  return ret;
+ }
  public int indexOf(int i) {
   int j=lastIn;
-  if (block[j] == 0 && j >= i)return j;
+  if (j >= 0 && block[j] == 0)return j;
   return lastIn = indexOfAll(i);
  }
  public int indexOfAll(int i) {
