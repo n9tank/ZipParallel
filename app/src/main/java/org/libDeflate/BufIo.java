@@ -7,5 +7,5 @@ public interface BufIo extends WritableByteChannel {
  public ByteBuffer getBuf();
  public ByteBuffer getBuf(int size)throws IOException ;
  public ByteBuffer getBufFlush() throws IOException;
- public void restMark();
+ //public void restMark();
 }

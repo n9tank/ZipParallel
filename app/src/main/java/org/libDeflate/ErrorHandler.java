@@ -42,8 +42,12 @@ public abstract class ErrorHandler {
  }
  public boolean cancel() {
   Vector<Future> list=flist;
-  this.flist = null;
   if (list == null)return false;
+  synchronized (this) {
+   list = flist;
+   if (list != null)this.flist = null;
+   else return false;
+  }
   for (Future fu:list) {
    fu.cancel(true);
   }
