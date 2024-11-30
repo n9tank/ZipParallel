@@ -11,11 +11,9 @@ import java.nio.channels.WritableByteChannel;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
 import me.steinborn.libdeflate.LibdeflateJavaUtils;
-import java.io.BufferedWriter;
 
 
 public class ZipEntryOutput extends ByteBufIo {
@@ -24,6 +22,7 @@ public class ZipEntryOutput extends ByteBufIo {
   public LibdeflateCompressor def;
   public int lvl;
   public BufOutput copy;
+  public ByteBuffer src;
   public ByteBuffer old;
   public boolean flush;
   public void write(int b) {
@@ -35,11 +34,6 @@ public class ZipEntryOutput extends ByteBufIo {
   public ByteBuffer getBuf() {
    ZipEntryOutput zip=ZipEntryOutput.this;
    return (zip.entry.mode > 0 ?copy: zip).getBuf();
-  }
-  public ByteBuffer getBuf(int size) {
-   return null;
-  }
-  public void restMark() {
   }
   public ByteBuffer getBufFlush() throws IOException {
    ZipEntryOutput zip=ZipEntryOutput.this;
@@ -63,7 +57,8 @@ public class ZipEntryOutput extends ByteBufIo {
     LibdeflateCompressor def = this.def;
     if (def != null)def.close();
     this.def = new LibdeflateCompressor(l, 0);
-    if (copy == null)copy = new BufOutput(1024);
+    if (src == null && copy == null)
+     copy = new BufOutput(1024);
     lvl = l;
    }
    flush = true;
@@ -102,16 +97,19 @@ public class ZipEntryOutput extends ByteBufIo {
    ZipEntryOutput zip=ZipEntryOutput.this;
    ZipEntryM en=zip.entry;
    if (en.mode > 0) {
-    ByteBuffer src=copy.buf;
-    int size=LibdeflateJavaUtils.getBufSize(src.position(), 0);
-    ByteBuffer old = ParallelDeflate.deflate(def, crc, zip, src, this.old, size , size <= outPage, false, en);
+    ByteBuffer src=this.src;
+    if (src == null) {
+     src = copy.buf;
+     src.flip();
+    } else this.src = null;
+    int size = LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
+    ByteBuffer old = ParallelDeflate.deflate(def, crc, zip, src, this.old, size , true, false, en);
     if (old != null) {
-     zip.write(old);
      old.clear();
      this.old = old;
     }
    } else writeEntryModify(en);
-  }
+  } 
  }
  public static final int AsInput=1;
  public static final int onlyInput=2;
@@ -130,15 +128,8 @@ public class ZipEntryOutput extends ByteBufIo {
  public ZipEntryM entry;
  public int flag=1;
  public CharsetEncoder charsetEncoder;
- public int outPage;
  public ByteBuffer tbuf;
  public CharsetEncoder utf8=StandardCharsets.UTF_8.newEncoder();
- public void page(int size) {
-  outPage = size >> 1;
-  ByteBuffer buf=ByteBuffer.allocateDirect(16);
-  buf.order(ByteOrder.LITTLE_ENDIAN);
-  tbuf = buf;
- }
  public ZipEntryOutput(File out) throws FileNotFoundException {
   //文件模式需要支持并发写出，鸽了。
   this(out, 16384, null);
@@ -154,7 +145,9 @@ public class ZipEntryOutput extends ByteBufIo {
  public ZipEntryOutput(WritableByteChannel wt, int size, CharsetEncoder utf) {
   super(wt, size);
   charsetEncoder = utf;
-  page(size);
+  ByteBuffer buf=ByteBuffer.allocateDirect(16);
+  buf.order(ByteOrder.LITTLE_ENDIAN);
+  tbuf = buf;
  }
  public int pos;
  public ByteBuffer getBuf() {
@@ -163,10 +156,9 @@ public class ZipEntryOutput extends ByteBufIo {
   return buf;
  }
  public ByteBuffer getBufFlush() throws IOException {
-  ByteBuffer buf=this.buf;
   upLength(buf.position() - pos);
-  flush();
-  return buf;
+  super.getBufFlush();
+  return getBuf();
  }
  public void cancel() {
   File out=outFile;

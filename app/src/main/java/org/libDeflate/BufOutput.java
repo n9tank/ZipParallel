@@ -21,21 +21,19 @@ public class BufOutput implements BufIo {
   n |= n >>> 16;  
   return n + 1;  
  }
- public ByteBuffer getBuf(){
+ public ByteBuffer getBuf() {
   return buf;
- }
- public ByteBuffer getBuf(int size) {
-  return null;
- }
- public void restMark() {
  }
  public ByteBuffer getBufFlush() {
   ByteBuffer old=this.buf;
-  ByteBuffer buf=ByteBuffer.allocateDirect(old.capacity() << 1);
-  this.buf = buf;
-  old.flip();
-  buf.put(old);
-  return buf;
+  if (old.position() == old.capacity()) {
+   ByteBuffer buf=ByteBuffer.allocateDirect(old.capacity() << 1);
+   this.buf = buf;
+   old.flip();
+   buf.put(old);
+   old = buf;
+  }
+  return old;
  }
  public int write(ByteBuffer src) {
   int len=src.remaining();

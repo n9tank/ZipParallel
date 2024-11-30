@@ -31,7 +31,9 @@ public class ByteBufIo extends OutputStream implements BufIo {
   return buf;
  }
  public ByteBuffer getBufFlush() throws IOException {
-  flush();
+  ByteBuffer buf=this.buf;
+  if (buf.position() == buf.capacity())
+   flush();
   return buf;
  }
  public void flush() throws IOException {
@@ -59,8 +61,6 @@ public class ByteBufIo extends OutputStream implements BufIo {
    buf.compact();
   }
   return buf;
- }
- public void restMark() {
  }
  public void put(byte brr[], int off, int len) throws IOException {
   WritableByteChannel wt=this.wt;
