@@ -8,7 +8,10 @@ public abstract class IoWriter {
  public int bufSize;
  public WritableByteChannel out;
  public BufferedWriter getWriter(Charset set) {
-  return new BufferedWriter(new BufWriter((BufIo)out, set));
+  return getWriter(set, Math.min(bufSize, 8192));
+ }
+ public BufferedWriter getWriter(Charset set, int size) {
+  return new BufferedWriter(new BufWriter((BufIo)out, set), size);
  }
  public abstract void flush()throws Exception;
 }

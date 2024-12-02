@@ -26,7 +26,7 @@ public class ZipEntryInput {
   }  
  }
  public static InputStream getRaw(InputStream io) {
-  if (!(io instanceof FileInputStream))return io;
+  if (!(io instanceof FilterInputStream))return io;
   try {
    FilterInputStream in=(FilterInputStream)io;
    InputStream nio=(InputStream)unwarp.invokeExact(in);
