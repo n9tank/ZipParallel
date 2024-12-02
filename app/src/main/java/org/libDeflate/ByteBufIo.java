@@ -32,9 +32,10 @@ public class ByteBufIo extends OutputStream implements BufIo {
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
-  if (buf.position() == buf.capacity())
-   flush();
+  flush();
   return buf;
+ }
+ public void end() {
  }
  public void flush() throws IOException {
   ByteBuffer buf=this.buf;
@@ -45,80 +46,41 @@ public class ByteBufIo extends OutputStream implements BufIo {
    wt.write(buf);
   buf.clear();
  }
- public ByteBuffer getBuf(int page) throws IOException {
+ public ByteBuffer getBuf(int page) {
   ByteBuffer buf=this.buf;
-  int pos=buf.position();
-  int cy=buf.capacity() - page;
-  if (pos > cy) {
-   int len = pos & -4096;
-   WritableByteChannel wt=this.wt;
-   buf.rewind();
-   buf.limit(len);
-   while (buf.hasRemaining())
-    wt.write(buf);
-   buf.limit(pos);
-   buf.position(len); 
-   buf.compact();
+  if (buf.remaining() < page) {
+   buf = page < buf.capacity() ?ByteBuffer.allocate(page): ByteBuffer.allocateDirect(page);
+   buf.order(ByteOrder.LITTLE_ENDIAN);
   }
   return buf;
  }
- public void put(byte brr[], int off, int len) throws IOException {
-  WritableByteChannel wt=this.wt;
-  if (wt != null) {
-   ByteBuffer buf=ByteBuffer.wrap(brr, off, len);
-   while (buf.hasRemaining())
-    wt.write(buf);
-  }
- }
  public void write(byte brr[], int off, int len) throws IOException {
+  write(ByteBuffer.wrap(brr, off, len));
+ }
+ public int write(ByteBuffer put) throws IOException {
+  int len=put.remaining();
   ByteBuffer buf=this.buf;
   int cy=buf.capacity();
   int limt=buf.remaining();
   int wlen=len - limt;
-  if (limt < cy || wlen < 0 || buf.isDirect())
-   buf.put(brr, off, Math.min(len, limt));
-  else wlen = len;
+  int rlen=put.limit();
+  if (wlen > 0)put.limit(put.position() + limt);
+  if (limt < cy || wlen < 0)buf.put(put);
+  limt = put.position();
+  wlen = len - limt;
   if (wlen > 0) {
    flush();
-   off += limt;
    if (wlen >= cy) {
-    int rlen=wlen & 4095;
-    put(brr, off , wlen & -4096);
-    off += wlen;
-    wlen = rlen;
-   }
-   buf.put(brr, off, wlen);
-  }
- }
- public int write(ByteBuffer put) throws IOException {
-  int len=put.remaining();
-  int rsize=len;
-  if (!put.isDirect()) {
-   write(put.array(), put.position(), len);
-  } else {
-   ByteBuffer buf=this.buf;
-   int cy=buf.capacity();
-   int limt=buf.remaining();
-   int wlen=len - limt;
-   int rlen=put.limit();
-   if (wlen > 0)put.limit(put.position() + limt);
-   if (limt < cy || wlen < 0)buf.put(put);
-   limt = put.position();
-   wlen = len - limt;
-   if (wlen > 0) {
-    flush();
-    if (wlen >= cy) {
-     WritableByteChannel wt=this.wt;
-     if (wt != null) {
-      put.limit(limt + (wlen & -4096));
-      while (put.hasRemaining())
-       wt.write(put);
-     }
+    WritableByteChannel wt=this.wt;
+    if (wt != null) {
+     put.limit(limt + (wlen & -4096));
+     while (put.hasRemaining())
+      wt.write(put);
     }
-    put.limit(rlen);
-    buf.put(put);
    }
+   put.limit(rlen);
+   buf.put(put);
   }
-  return rsize;
+  return len;
  }
 }
