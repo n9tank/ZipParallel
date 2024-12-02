@@ -24,27 +24,25 @@ public class BufOutput implements BufIo {
  public ByteBuffer getBuf() {
   return buf;
  }
+ public static ByteBuffer copy(ByteBuffer old, int size) {
+  ByteBuffer buf=ByteBuffer.allocateDirect(size);
+  old.flip();
+  buf.put(old);
+  return buf;
+ }
  public ByteBuffer getBufFlush() {
   ByteBuffer old=this.buf;
-  if (old.position() == old.capacity()) {
-   ByteBuffer buf=ByteBuffer.allocateDirect(old.capacity() << 1);
-   this.buf = buf;
-   old.flip();
-   buf.put(old);
-   old = buf;
-  }
+  this.buf = old = copy(old, old.capacity() << 1);
   return old;
+ }
+ public void end() {
  }
  public int write(ByteBuffer src) {
   int len=src.remaining();
   ByteBuffer buf=this.buf;
   int limt=buf.remaining() - len;
-  if (len > limt) {
-   ByteBuffer old=buf;
-   this.buf = buf = ByteBuffer.allocateDirect(tableSizeFor(buf.position() + len));
-   old.flip();
-   buf.put(old);
-  }
+  if (len > limt)
+   this.buf = buf = copy(buf, tableSizeFor(buf.position() + len));
   buf.put(src);
   return len;
  }

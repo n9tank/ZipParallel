@@ -1,11 +1,12 @@
 package org.libDeflate;
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.CharsetEncoder;
@@ -13,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
-import me.steinborn.libdeflate.LibdeflateJavaUtils;
 
 
 public class ZipEntryOutput extends ByteBufIo {
@@ -22,8 +22,8 @@ public class ZipEntryOutput extends ByteBufIo {
   public LibdeflateCompressor def;
   public int lvl;
   public BufOutput copy;
-  public ByteBuffer src;
   public ByteBuffer old;
+  public ByteBuffer src;
   public boolean flush;
   public void write(int b) {
    throw new RuntimeException();
@@ -34,6 +34,11 @@ public class ZipEntryOutput extends ByteBufIo {
   public ByteBuffer getBuf() {
    ZipEntryOutput zip=ZipEntryOutput.this;
    return (zip.entry.mode > 0 ?copy: zip).getBuf();
+  }
+  public void end() {
+   ZipEntryOutput zip=ZipEntryOutput.this;
+   if (zip.entry.mode <= 0)
+    zip.end();
   }
   public ByteBuffer getBufFlush() throws IOException {
    ZipEntryOutput zip=ZipEntryOutput.this;
@@ -73,22 +78,19 @@ public class ZipEntryOutput extends ByteBufIo {
      src.rewind();
     }
     return zip.write(src);
-   } else {
-    copy.write(src);
-    src.clear();
-   }
+   } else copy.write(src);
    return len;
   }
   public void write(byte[] b, int off, int len) throws IOException {
    write(ByteBuffer.wrap(b, off, len));
   }
-  public void free() {
+  public void free() { 
    copy = null;
    old = null;
    LibdeflateCompressor def=this.def;
    if (def != null) {
     this.def = null;
-    def.close();
+    def.close(); 
    }
   }
   public void close() throws IOException {
@@ -102,12 +104,7 @@ public class ZipEntryOutput extends ByteBufIo {
      src = copy.buf;
      src.flip();
     } else this.src = null;
-    int size = LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
-    ByteBuffer old = ParallelDeflate.deflate(def, crc, zip, src, this.old, size , true, false, en);
-    if (old != null) {
-     old.clear();
-     this.old = old;
-    }
+    this.old = ParallelDeflate.deflate(def, crc, zip, src, this.old , true, false, en);
    } else writeEntryModify(en);
   } 
  }
@@ -117,7 +114,6 @@ public class ZipEntryOutput extends ByteBufIo {
  public static final int enmode=8;
  public static final int openJdk8opt=16;
  public static final int igonUtf8=32;
- public boolean pk78;
  public long last;
  public DeflaterIo outDef=new DeflaterIo();
  public ArrayList<ZipEntryM> list=new ArrayList();
@@ -135,7 +131,7 @@ public class ZipEntryOutput extends ByteBufIo {
   this(out, 16384, null);
  }
  public ZipEntryOutput(File file, int size, CharsetEncoder utf) throws FileNotFoundException {
-  this(new FileOutputStream(file).getChannel(), size, utf);
+  this(new RandomAccessFile(file, "rw").getChannel(), size, utf);
   outFile = file;
   rnio = (FileChannel)wt;
  }
@@ -155,10 +151,17 @@ public class ZipEntryOutput extends ByteBufIo {
   pos = buf.position();
   return buf;
  }
+ public void end() {
+  int set=buf.position();
+  upLength(set - pos);
+  pos = set;
+ }
  public ByteBuffer getBufFlush() throws IOException {
+  ByteBuffer buf=this.buf;
   upLength(buf.position() - pos);
   super.getBufFlush();
-  return getBuf();
+  pos = 0;
+  return buf;
  }
  public void cancel() {
   File out=outFile;
@@ -181,16 +184,15 @@ public class ZipEntryOutput extends ByteBufIo {
   return wt;
  }
  public void upLength(long i) {
-  if (list.size() == 0) {
+  if (list.size() == 0)
    headOff += i;
-  }
   off += i;
  }
  public void write(int b) {
   throw new RuntimeException();
  }
  public void write(byte[] b, int off, int len) throws IOException {
-  super.write(b, off, len);
+  super.write(ByteBuffer.wrap(b, off, len));
   upLength(len);
  }
  public int write(ByteBuffer src) throws IOException {
@@ -228,56 +230,37 @@ public class ZipEntryOutput extends ByteBufIo {
  }
  public void writeEntryModify(ZipEntryM ze) throws IOException {
   if ((flag & AsInput) == 0 || ze.notFix || ze.size <= 0)return;
-  writeEntryModify(ze, size(), false);
+  writeEntryModify(ze, null, size(), buf);
  }
- public void writeEntryModify(ZipEntryM zip, long pos, boolean fix) throws IOException {
-  int size=zip.size;
+ public void writeEntryModify(ZipEntryM zip, ByteBuffer mmap, long pos, ByteBuffer buf) {
   long start=zip.start + 14;
-  int wlen;
-  if (zip.mode <= 0)wlen = 12;
-  else {
-   start += 4;
-   wlen = 4;
-  }
   ByteBuffer buff;
-  int cpos;
+  int cpos=buf.position();
+  int off=(int)(pos - start);
   if (start >= pos) {
    buff = buf;
-   cpos = buff.position();
-   buff.position((int)(start - pos));
+   buff.position(off);
   } else {
-   //必须进行一次写出，这里不处理细节控制
-   if (!fix)return;
-   cpos = 0;
-   buff = tbuf;
+   if (mmap == null)return;
+   if (start + 12 >= pos) {
+    buff = tbuf;
+   } else buff = mmap;
+   mmap.position((int)start);
   }
-  boolean all=wlen > 4;
-  //如果你想要细节的控制，无疑是过于困难的，建议让使用者输入简单。
-  if (all)buff.putInt(size);
+  buff.putInt(zip.size);
   buff.putInt(zip.csize);
-  if (all)buff.putInt(zip.crc);
-  if (start < pos) {
-   if (start + wlen >= pos) {
-    ByteBuffer buf = this.buf;
-    int off=(int)(pos - start);
-    int len=wlen - off;
-    buf.rewind();
-    buf.limit(len);
-    buff.position(off);
-    buf.put(buff);
-    buff.rewind();
-    buff.limit(off);
-    buf.clear();
-   } else buff.flip();
-   if (buff.hasRemaining()) {
-    FileChannel nio=rnio;
-    nio.position(start);
-    nio.write(buff);
-   }
-  }
+  buff.putInt(zip.crc);
+  if (mmap != null && buff != buf) {
+   buff.rewind();
+   buff.limit(off);
+   mmap.put(buf);
+   buff.limit(12);
+   buf.rewind();
+   buf.put(buff);
+   buff = buf; 
+  } else zip.notFix = true;
   buff.clear();
-  buff.position(cpos);
-  if (!fix)zip.notFix = true;
+  buf.position(cpos);
  }
  public long size() {
   return off - buf.position();
@@ -288,9 +271,9 @@ public class ZipEntryOutput extends ByteBufIo {
   CharsetEncoder charsetEncoder=this.charsetEncoder;
   int size=30;
   if ((flag & AsInput) > 0) {
-   utf8 = zip.utf(charsetEncoder);
-   int n= zip.name.length();
-   size += utf8 ?n << 2: (int)(n * charsetEncoder.maxBytesPerChar());
+   if (utf8 = zip.utf(charsetEncoder))
+    charsetEncoder = this.utf8;
+   size += charsetEncoder.maxBytesPerChar() * zip.name.length();
    skip = false;
   } else {
    utf8 = false;
@@ -300,15 +283,15 @@ public class ZipEntryOutput extends ByteBufIo {
   int pos=buff.position();
   buff.putInt(0x04034b50);
   putBits(buff, utf8, false, zip);
-  fill(buff, pos + 26);
-  buff.position(pos + 28);
-  fill(buff, pos + 30);
+  fill(buff, pos + 26, 2);
+  fill(buff, pos + 30, 0);
+  releaseBuf(buff, 30);
   int len;
-  if (!skip)len = zip.encode(charsetEncoder, this, utf8);
-  else len = 0;
-  if (len > 0) fixNameSize(off + 26, len);
-  else buff.putShort(pos + 26, (short)(len = buff.position() - 30 - pos));
-  upLength(len + 30);
+  if (!skip) {
+   len = zip.encode(charsetEncoder, buff);
+   buff.putShort(pos + 26, (short)len);
+  } else len = 0;
+  releaseBuf(buff, 30 + len);
  }
  public short globalBit(boolean data, boolean utf8) {
   short bit=0;
@@ -316,46 +299,50 @@ public class ZipEntryOutput extends ByteBufIo {
   if ((flag & igonUtf8) == 0 && utf8)bit |= 2048;
   return bit;
  }
- public void fixNameSize(long g, int size) throws IOException {
-  FileChannel rnio=this.rnio;
-  rnio.position(g);
-  ByteBuffer tbuf=this.tbuf;
-  tbuf.putShort((short)size);
-  tbuf.flip();
-  rnio.write(tbuf);
-  rnio.position(size());
-  //否则需要一个队列
-  tbuf.clear();
- }
  public void writeEntryFix(ZipEntryM zip) throws IOException {
   int size=zip.size;
   if (zip.notFix || size <= 0)return;
-  ByteBuffer buff=getBuf(16);
+  ByteBuffer buf=this.buf;
+  ByteBuffer tbuf=this.tbuf;
+  ByteBuffer buff=buf.remaining() < 16 ?tbuf: buf;
   buff.putInt(0x08074b50);
   buff.putInt(zip.crc);
   buff.putInt(zip.csize);
   buff.putInt(size);
-  upLength(16);
+  releaseBuf(buff, 16);
+  tbuf.clear();
  }
  public void finish() throws IOException {
   closeEntry();
   outDef.free();
   FileChannel nio=rnio;
   int flag=this.flag;
-  if ((flag & AsInput) > 0 && rnio != null) {
-   long pos=size();
+  if ((flag & AsInput) > 0 && nio != null) {
+   long off=0;
+   long fileSize=size();
+   ByteBuffer next=null;
+   ByteBuffer map=null;
+   int PAGESIZE=System.getProperty("os.arch").contains("64") ?Integer.MAX_VALUE: 1073741824;
+   //32位系统限制页码1G，避免虚拟内存耗尽
    for (ZipEntryM ze:list) {
     if (ze.notFix || ze.size <= 0)continue;
-    writeEntryModify(ze, pos, true);
+    long start=ze.start + 14;
+    if (start > off) {
+     if (next instanceof MappedByteBuffer)map = next;
+     else map =  nio.map(FileChannel.MapMode.READ_WRITE, off, Math.min(PAGESIZE, fileSize - off));
+     off += PAGESIZE;
+     map.order(ByteOrder.LITTLE_ENDIAN);
+     next =  off > fileSize ?buf: nio.map(FileChannel.MapMode.READ_WRITE, off, Math.min(PAGESIZE, fileSize - off));
+    }
+    writeEntryModify(ze, map, Math.min(fileSize, off), next);
    }
-   nio.position(pos);
   }
   if ((flag & onlyInput) == 0) {
    long size=off;
    for (ZipEntryM ze:list) {
     writeEntryEnd(ze);
    }
-   writeEnd((int)(off - size));
+   writeEnd(off - size);
   }
   list = null;
  }
@@ -378,9 +365,7 @@ public class ZipEntryOutput extends ByteBufIo {
   boolean enmode=(flag & this.enmode) > 0;
   boolean input=(flag & AsInput) > 0;
   boolean ensize=!need && !input;
-  boolean data=false;
-  buff.putShort(ensize ?0: globalBit(data = (!zip.notFix && input && rnio == null), utf8));
-  pk78 |= data;
+  buff.putShort(ensize ?0: globalBit((!zip.notFix && input && rnio == null), utf8));
   buff.putShort((short)(ensize ?0: !enmode && mode <= 0 ?0: 8));
   buff.putInt(ensize || enmode ?0: zip.xdostime);
   buff.putInt(ensize ?0: enmode ?0xff: zip.crc);
@@ -391,39 +376,45 @@ public class ZipEntryOutput extends ByteBufIo {
  public void writeEntryEnd(ZipEntryM zip) throws IOException {
   CharsetEncoder charsetEncoder=this.charsetEncoder;
   boolean utf8=zip.utf(charsetEncoder);
-  int size=zip.name.length();
-  ByteBuffer buff=getBuf((utf8 ?size << 2: (int)(size * charsetEncoder.maxBytesPerChar())) + 46);
+  if (utf8)charsetEncoder = this.utf8;
+  ByteBuffer buff=getBuf(46 + (int)(charsetEncoder.maxBytesPerChar() * zip.name.length()));
   int pos=buff.position();
   buff.putInt(0x02014b50);
   buff.putShort((short)0);
   putBits(buff, utf8, true, zip);
-  fill(buff, pos + 28);
-  buff.position(pos + 30);
-  fill(buff, pos + 42);
+  fill(buff, pos + 28, 2);
+  fill(buff, pos + 42, 0);
   buff.putInt((int)(zip.start - headOff));
-  int len=zip.encode(charsetEncoder, this, utf8);
-  if (len > 0)fixNameSize(off + 28, len);
-  else buff.putShort(pos + 28, (short)(len = buff.position() - 46 - pos));
-  upLength(len + 46);
+  int len=zip.encode(charsetEncoder, buff);
+  buff.putShort(pos + 28, (short)len);
+  releaseBuf(buff, 46 + len);
  }
- public static void fill(ByteBuffer buf, int pos) {
-  int i=buf.position();
-  byte b=0;
-  for (;i <= pos;++i)buf.put(i, b);
-  buf.position(pos);
+ public void fill(ByteBuffer buf, int pos, int len) {
+  if (buf == this.buf) {
+   int i=buf.position();
+   byte b=0;
+   for (;i <= pos;++i)buf.put(i, b);
+  }
+  buf.position(pos + len);
  }
- public void writeEnd(int size)throws IOException {
-  ByteBuffer buff= getBuf(24);
+ public void releaseBuf(ByteBuffer buf, int len) throws IOException {
+  if (buf != this.buf) {
+   buf.flip();
+   super.write(buf);
+  }
+  upLength(len);
+ }
+ public void writeEnd(long size)throws IOException {
+  ByteBuffer buff= getBuf(22);
   int pos=buff.position();
-  int len= pos + (pk78 ?24: 22);
   buff.putInt(0X06054B50);
-  fill(buff, pos + 8);
+  fill(buff, pos + 8, 0);
   short num=(short)list.size();
   buff.putShort(num);
   buff.putShort(num);
-  buff.putInt(size);
+  buff.putInt((int)size);
   buff.putInt((int)(off - size - headOff));
-  fill(buff, len);
-  upLength(len);
+  fill(buff, pos + 22, 0);
+  releaseBuf(buff, 22);
  }
 }

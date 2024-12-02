@@ -129,17 +129,16 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   LibdeflateCompressor def = new LibdeflateCompressor(ze.mode, 0);
   ByteBuffer buf;
   LibdeflateCRC32 crc;
-  int size = LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
   if (!ze.notFix)crc = new LibdeflateCRC32();
   else crc = null;
   try {
-   buf = deflate(def, crc, zipout, src, null, size, wrok, true, ze);
+   buf = deflate(def, crc, zipout, src, null, wrok, true, ze);
   } finally {
    def.close();
   }
   return buf;
  }
- public static ByteBuffer deflate(LibdeflateCompressor def, LibdeflateCRC32 crc, ZipEntryOutput out, ByteBuffer src, ByteBuffer put, int size, boolean wrok, boolean is, ZipEntryM ze) throws IOException {
+ public static ByteBuffer deflate(LibdeflateCompressor def, LibdeflateCRC32 crc, ZipEntryOutput out, ByteBuffer src, ByteBuffer old, boolean wrok, boolean is, ZipEntryM ze) throws IOException {
   int readlen=src.remaining();
   ze.size = readlen;
   int pos=src.position();
@@ -148,30 +147,30 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    src.position(pos);
    ze.crc = (int)crc.getValue();
   }
-  if (put != null)put.clear();
   if (wrok && is)out.putEntry(ze, true);
   boolean has;
   ByteBuffer buf=out.buf;
+  int size=LibdeflateJavaUtils.getBufSize(readlen, 0);
   if (has = (!wrok || buf.remaining() < size)) {
-   boolean cput=put == null || put.capacity() < size;
-   if (cput && size <= buf.capacity() >> 1) {
-    out.getBuf(size);
-    has = false;
-   } else {
-    if (!wrok)ze.notFix = true;
-    buf = ByteBuffer.allocateDirect(is ?size: BufOutput.tableSizeFor(size));
-   }
+   if (!wrok)ze.notFix = true;
+   buf = old == null || old.capacity() < size ?old = ByteBuffer.allocateDirect(is ?size: BufOutput.tableSizeFor(size)): old;
   }
   int outlen=def.compress(src, buf);
   ze.csize = outlen;
   src.clear();
   if (has)buf.flip();
   if (wrok) {
-   out.writeEntryModify(ze);
-   if (has)out.write(buf);
-   else out.upLength(outlen);
+   if (has) {
+    out.writeEntryModify(ze);
+    out.upLength(outlen);
+    out.write(buf);
+    buf.clear();
+   } else {
+    out.upLength(outlen);
+    out.writeEntryModify(ze);
+   }
   }
-  return wrok && (is || !has) ?null: buf;
+  return is ? wrok ?null: buf: old;
  }
  public final static ExecutorService pool=new ForkJoinPool();
  public ConcurrentLinkedQueue list;
@@ -231,16 +230,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    } else {
     ZipEntryOutput data=zipout;
     WritableByteChannel wt;
-    boolean fixSize;
-    if (zip.notFix) {
-     wt = data.getNio();
-     fixSize = true;
-    } else {
-     wt = data.outDef;
-     fixSize = false;
-    }
+    if (zip.notFix)wt = data.getNio();
+    else wt = data.outDef;
     nio.transferTo(0, size, wt);
-    if (fixSize)data.upLength(size);
+    if (!(wt instanceof ZipEntryOutput.DeflaterIo))
+     data.upLength(size);
    }
   } finally {
    nio.close();
@@ -299,7 +293,9 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  public byte[] copybuf;
  public byte[] getBuf() {
   byte buf[]=copybuf;
-  if (buf == null)copybuf = buf = new byte[16384];
+  int cy=zipout.buf.capacity();
+  if (buf == null || buf.length < cy)
+   copybuf = buf = new byte[cy];
   return buf;
  }
  public void copyIo(InputStream in, ZipEntryM zip) throws IOException {
