@@ -162,7 +162,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   if (wrok) {
    if (has) {
     out.writeEntryModify(ze);
-    out.upLength(outlen);
     out.write(buf);
     buf.clear();
    } else {
@@ -198,8 +197,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   if (buf != null) {
    ByteBuffer src=buf.buf;
    src = deflate(src, iswrok, zip);
-   if ((src = tryWrite(src, zip)) != null)
-    return src;
+   return tryWrite(src, zip);
   }
   return null;
  }
@@ -225,8 +223,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    if (zip.mode > 0) {
     ByteBuffer src = deflate(nio.map(FileChannel.MapMode.READ_ONLY, 0, size), working, zip);
     nio.close();
-    if ((src = tryWrite(src, zip)) != null)
-     return src;
+    return tryWrite(src, zip);
    } else {
     ZipEntryOutput data=zipout;
     WritableByteChannel wt;
@@ -283,9 +280,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    }
    in.close();
    ByteBuffer src=deflate(outbuf, wroking, zip);
-   if ((src = tryWrite(src, zip)) != null)
-    return src;
-   return null;
+   return tryWrite(src, zip);
   } finally {
    in.close();
   }

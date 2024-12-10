@@ -114,6 +114,7 @@ public class ZipEntryOutput extends ByteBufIo {
  public static final int enmode=8;
  public static final int openJdk8opt=16;
  public static final int igonUtf8=32;
+ public static final int zip64enmode=64;
  public long last;
  public DeflaterIo outDef=new DeflaterIo();
  public ArrayList<ZipEntryM> list=new ArrayList();
@@ -340,7 +341,10 @@ public class ZipEntryOutput extends ByteBufIo {
    for (ZipEntryM ze:list) {
     writeEntryEnd(ze);
    }
-   writeEnd(off - size);
+   long len=off - size;
+   if ((flag & zip64enmode) > 0)
+    writrEnd64(len);
+   else writeEnd(len);
   }
   list = null;
  }
@@ -403,14 +407,30 @@ public class ZipEntryOutput extends ByteBufIo {
   }
   upLength(len);
  }
+ public void writrEnd64(long size) throws IOException {
+  ByteBuffer buff= getBuf(98);
+  int pos=buff.position();
+  buff.putInt(0x06064b50);
+  fill(buff, pos + 32);
+  buff.putLong(list.size());
+  buff.putLong(size);
+  buff.putLong(off - size - headOff);
+  buff.putInt(0x07064b50);
+  fill(buff, pos + 64);
+  buff.putLong(off);
+  fill(buff, pos + 76);
+  buff.putInt(0X06054B50);
+  fill(buff, pos + 86);
+  buff.putShort((short)0xffff);
+  fill(buff, pos + 98);
+  releaseBuf(buff, 98); 
+ }
  public void writeEnd(long size)throws IOException {
   ByteBuffer buff= getBuf(22);
   int pos=buff.position();
   buff.putInt(0X06054B50);
-  fill(buff, pos + 8);
-  short num=(short)list.size();
-  buff.putShort(num);
-  buff.putShort(num);
+  fill(buff, pos + 10);
+  buff.putShort((short)list.size());
   buff.putInt((int)size);
   buff.putInt((int)(off - size - headOff));
   fill(buff, pos + 22);
