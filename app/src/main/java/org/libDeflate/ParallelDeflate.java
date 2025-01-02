@@ -16,6 +16,7 @@ import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
 import me.steinborn.libdeflate.LibdeflateDecompressor;
 import me.steinborn.libdeflate.LibdeflateJavaUtils;
+import me.steinborn.libdeflate.ObjectPool;
 
 public class ParallelDeflate implements AutoCloseable,Canceler {
  public class DeflateWriter implements Callable {
@@ -102,6 +103,8 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void end() {
   clearList();
+  ObjectPool.inflateGc();
+  ObjectPool.deflateGc();
   try {
    zipout.close();
   } catch (Exception e) {
@@ -109,11 +112,18 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   }
  }
  public void close() throws IOException {
-  if (async)on.pop();
-  else zipout.close();
+  if (async)
+   on.pop();
+  else {
+   ObjectPool.inflateGc();
+   ObjectPool.deflateGc();
+   zipout.close();
+  }
  }
  public void cancel() {
   if (!on.cancel())return;
+  ObjectPool.inflateGc();
+  ObjectPool.deflateGc();
   zipout.cancel();
   return;
  }
@@ -126,7 +136,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public ByteBuffer deflate(ByteBuffer src, boolean wrok, ZipEntryM ze) throws IOException {
   src.flip();
-  LibdeflateCompressor def = new LibdeflateCompressor(ze.mode, 0);
+  LibdeflateCompressor def =ObjectPool.allocDeflate(ze.mode, 0);
   ByteBuffer buf;
   LibdeflateCRC32 crc;
   if (!ze.notFix)crc = new LibdeflateCRC32();
@@ -134,7 +144,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   try {
    buf = deflate(def, crc, zipout, src, null, wrok, true, ze);
   } finally {
-   def.close();
+   ObjectPool.free(def);
   }
   return buf;
  }
@@ -258,12 +268,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    in.close();
   }
   ByteBuffer drc=ByteBuffer.allocateDirect(unsize);
-  LibdeflateDecompressor def=new LibdeflateDecompressor(0);
+  LibdeflateDecompressor def=ObjectPool.allocInfalte(0);
   try {
    while (buf.hasRemaining())
     def.decompress(buf, drc);
   } finally {
-   def.close();
+   ObjectPool.free(def);
   }
   return drc;
  }

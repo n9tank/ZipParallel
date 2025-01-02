@@ -1,10 +1,10 @@
 package org.libDeflate;
+import java.io.IOException;
 import java.util.Vector;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.LongAdder;
-import java.io.IOException;
 
 public abstract class ErrorHandler {
  public volatile Vector<Future> flist=new Vector();
@@ -18,11 +18,13 @@ public abstract class ErrorHandler {
   this.can = can;
  }
  public void add(Callable call) throws IOException {
-  if (!igron && err.size() > 0)throw new IOException();
+  Vector<Future> flist=this.flist;
+  if (flist == null)throw new IOException();
   io.increment();
   flist.add(pool.submit(call));
  }
  public void addN(Callable call) {
+  Vector<Future> flist=this.flist;
   if (flist == null)pop();
   else flist.add(pool.submit(call));
  }
@@ -30,6 +32,7 @@ public abstract class ErrorHandler {
   return flist == null;
  }
  public void pop() {
+  LongAdder io=this.io;
   io.decrement();
   if (io.sum() < 0) {
    if (flist != null)can.end();
@@ -51,7 +54,7 @@ public abstract class ErrorHandler {
   }
   for (Future fu:list) {
    boolean isrun=fu.cancel(true);
-   if (!isrun && !fu.isDone())
+   if (!isrun && fu.isCancelled())
     pop();
   }
   return true;
