@@ -151,8 +151,8 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  public static ByteBuffer deflate(LibdeflateCompressor def, LibdeflateCRC32 crc, ZipEntryOutput out, ByteBuffer src, ByteBuffer old, boolean wrok, boolean is, ZipEntryM ze) throws IOException {
   int readlen=src.remaining();
   ze.size = readlen;
-  int pos=src.position();
   if (crc != null) {
+   int pos=src.position();
    crc.update(src);
    src.position(pos);
    ze.crc = (int)crc.getValue();
@@ -295,23 +295,25 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    in.close();
   }
  }
- public byte[] copybuf;
- public byte[] getBuf() {
-  byte buf[]=copybuf;
-  int cy=zipout.buf.capacity();
-  if (buf == null || buf.length < cy)
-   copybuf = buf = new byte[cy];
+ public ByteBuffer copybuf;
+ public ByteBuffer getBuf() {
+  ByteBuffer buf=copybuf;
+  if (buf == null)
+   copybuf = buf = ByteBuffer.allocate(zipout.buf.capacity());
   return buf;
  }
  public void copyIo(InputStream in, ZipEntryM zip) throws IOException {
   ZipEntryOutput out=zipout;
-  byte buf[]=getBuf();
+  ByteBuffer buffer=getBuf();
+  byte buf[]=buffer.array();
   int i;
   LibdeflateCRC32 crc=!zip.notFix ?new LibdeflateCRC32(): null;
   try {
    while ((i = readLoop(in, buf)) > 0) {
     if (crc != null)crc.update(buf, 0, i);
-    out.write(buf, 0, i);
+    buffer.rewind();
+    buffer.limit(i);
+    out.write(buffer);
    }
   } finally {
    in.close();
