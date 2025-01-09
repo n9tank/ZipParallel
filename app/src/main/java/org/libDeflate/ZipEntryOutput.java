@@ -120,7 +120,6 @@ public class ZipEntryOutput extends ByteBufIo {
  public long off;
  public long headOff;
  public File outFile;
- public FileChannel rnio;
  public ZipEntryM entry;
  public int flag=1;
  public CharsetEncoder charsetEncoder;
@@ -133,7 +132,6 @@ public class ZipEntryOutput extends ByteBufIo {
  public ZipEntryOutput(File file, int size, CharsetEncoder utf) throws FileNotFoundException {
   this(new RandomAccessFile(file, "rw").getChannel(), size, utf);
   outFile = file;
-  rnio = (FileChannel)wt;
  }
  public ZipEntryOutput(WritableByteChannel wt) {
   this(wt, 16384, null);
@@ -164,17 +162,17 @@ public class ZipEntryOutput extends ByteBufIo {
   return buf;
  }
  public void cancel() {
-  File out=outFile;
-  if (out != null) {
-   out.delete();
-   out = null;
-  } 
   list = null;
   buf = null;
   try {
    close();
   } catch (Exception e) {
   }
+  File out=outFile;
+  if (out != null) {
+   out.delete();
+   out = null;
+  } 
  }
  public boolean isOpen() {
   return true;
@@ -206,7 +204,7 @@ public class ZipEntryOutput extends ByteBufIo {
    outDef.close();
    if (ze.size < 0) {
     if (ze.mode <= 0)ParallelDeflate.fixEntry(this, outDef.crc, ze);
-    if ((flag & AsInput) > 0 && rnio == null) {
+    if ((flag & AsInput) > 0 && outFile == null) {
      writeEntryFix(ze);
     }
    }
@@ -228,7 +226,7 @@ public class ZipEntryOutput extends ByteBufIo {
   writeEntry(zip);
   last = off;
  }
- public void writeEntryModify(ZipEntryM ze) throws IOException {
+ public void writeEntryModify(ZipEntryM ze) {
   if ((flag & AsInput) == 0 || ze.notFix || ze.size <= 0)return;
   writeEntryModify(ze, null, size(), buf);
  }
@@ -313,9 +311,9 @@ public class ZipEntryOutput extends ByteBufIo {
  public void finish() throws IOException {
   closeEntry();
   outDef.free();
-  FileChannel nio=rnio;
   int flag=this.flag;
-  if ((flag & AsInput) > 0 && nio != null) {
+  if ((flag & AsInput) > 0 && outFile != null) {
+   FileChannel nio=(FileChannel)wt;
    long off=0;
    long fileSize=size();
    ByteBuffer next=null;
@@ -365,7 +363,7 @@ public class ZipEntryOutput extends ByteBufIo {
   boolean enmode=(flag & this.enmode) > 0;
   boolean input=(flag & AsInput) > 0;
   boolean ensize=!need && !input;
-  buff.putShort(ensize ?0: globalBit((!zip.notFix && input && rnio == null), utf8));
+  buff.putShort(ensize ?0: globalBit((!zip.notFix && input && !(wt instanceof FileChannel)), utf8));
   buff.putShort((short)(ensize ?0: !enmode && mode <= 0 ?0: 8));
   buff.putInt(ensize || enmode ?0: zip.xdostime);
   buff.putInt(ensize ?0: enmode ?0xff: zip.crc);

@@ -23,10 +23,12 @@ public class ByteBufIo extends OutputStream implements BufIo {
  }
  public void close() throws IOException {
   try {
-   flush();
-   if (wt instanceof FileChannel) {
-    FileChannel rnio=(FileChannel)wt;
-    rnio.truncate(rnio.position());
+   if (buf != null) {
+    flush();
+    if (wt instanceof FileChannel) {
+     FileChannel rnio=(FileChannel)wt;
+     rnio.truncate(rnio.position());
+    }
    }
   } finally {
    wt.close();
@@ -44,7 +46,6 @@ public class ByteBufIo extends OutputStream implements BufIo {
  }
  public void flush() throws IOException {
   ByteBuffer buf=this.buf;
-  if (buf == null)return;
   buf.flip();
   WritableByteChannel wt=this.wt;
   while (buf.hasRemaining())
@@ -64,28 +65,33 @@ public class ByteBufIo extends OutputStream implements BufIo {
  }
  public int write(ByteBuffer put) throws IOException {
   int len=put.remaining();
+  int limt=put.limit();
   ByteBuffer buf=this.buf;
-  int cy=buf.capacity();
-  int limt=buf.remaining();
-  int wlen=len - limt;
-  int rlen=put.limit();
-  if (wlen > 0)put.limit(put.position() + limt);
-  if (limt < cy || wlen < 0)buf.put(put);
-  limt = put.position();
-  wlen = len - limt;
-  if (wlen > 0) {
-   flush();
-   if (wlen >= cy) {
-    WritableByteChannel wt=this.wt;
-    if (wt != null) {
-     put.limit(limt + (wlen & -4096));
-     while (put.hasRemaining())
-      wt.write(put);
+  if (len >= buf.capacity()) {
+   int pos=buf.position();
+   if (pos > 0) {
+    pos &= 4095;
+    if (pos > 0) {
+     int rem=4096 - pos;
+     len -= rem;
+     put.limit(put.position() + rem);
+     buf.put(put);
     }
+    flush();
    }
-   put.limit(rlen);
+   put.limit(put.position() + (len & -4096));
+   WritableByteChannel wt=this.wt;
+   while (put.hasRemaining())
+    wt.write(put);
+  } else {
+   int rem=buf.remaining();
+   put.limit(put.position() + Math.min(len, rem));
    buf.put(put);
+   if (len >= rem)
+    flush();
   }
+  put.limit(limt);
+  buf.put(put);
   return len;
  }
 }
