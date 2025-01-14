@@ -1,9 +1,6 @@
 package org.libDeflate;
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
@@ -11,9 +8,13 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
+import java.io.File;
 
 
 public class ZipEntryOutput extends ByteBufIo {
@@ -119,19 +120,22 @@ public class ZipEntryOutput extends ByteBufIo {
  public ArrayList<ZipEntryM> list=new ArrayList();
  public long off;
  public long headOff;
- public File outFile;
+ public Path outFile;
  public ZipEntryM entry;
  public int flag=1;
  public CharsetEncoder charsetEncoder;
  public ByteBuffer tbuf;
  public CharsetEncoder utf8=StandardCharsets.UTF_8.newEncoder();
- public ZipEntryOutput(File out) throws FileNotFoundException {
+ public ZipEntryOutput(File out) throws IOException {
+  this(out.toPath());
+ }
+ public ZipEntryOutput(Path out) throws IOException {
   //文件模式需要支持并发写出，鸽了。
   this(out, 16384, null);
  }
- public ZipEntryOutput(File file, int size, CharsetEncoder utf) throws FileNotFoundException {
-  this(new RandomAccessFile(file, "rw").getChannel(), size, utf);
-  outFile = file;
+ public ZipEntryOutput(Path fs, int size, CharsetEncoder utf) throws IOException {
+  this(FileChannel.open(fs, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE), size, utf);
+  outFile = fs;
  }
  public ZipEntryOutput(WritableByteChannel wt) {
   this(wt, 16384, null);
@@ -168,9 +172,11 @@ public class ZipEntryOutput extends ByteBufIo {
    close();
   } catch (Exception e) {
   }
-  File out=outFile;
+  Path out=outFile;
   if (out != null) {
-   out.delete();
+   try {
+    Files.delete(out);
+   } catch (IOException e) {}
    out = null;
   } 
  }

@@ -17,6 +17,8 @@ import me.steinborn.libdeflate.LibdeflateCompressor;
 import me.steinborn.libdeflate.LibdeflateDecompressor;
 import me.steinborn.libdeflate.LibdeflateJavaUtils;
 import me.steinborn.libdeflate.ObjectPool;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.Path;
 
 public class ParallelDeflate implements AutoCloseable,Canceler {
  public class DeflateWriter implements Callable {
@@ -25,7 +27,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   public IoWriter io;
   public ByteBuffer outbuf;
   public ZipEntryM zip;
-  public File fc;
+  public Path fc;
   public DeflateWriter(InputGet input, ZipEntryM ze, boolean raw) {
    in = input;
    zip = ze;
@@ -35,7 +37,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    io = out;
    zip = ze;
   }
-  public DeflateWriter(File out, ZipEntryM ze) {
+  public DeflateWriter(Path out, ZipEntryM ze) {
    fc = out;
    zip = ze;
   }
@@ -52,7 +54,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
     write(wt, true, zip);
     return;
    }
-   File fc=this.fc;
+   Path fc=this.fc;
    if (fc != null)addFile(fc, true, zip);
    InputStream input=in.io();
    if (raw)copyToZip(input, zip);
@@ -79,7 +81,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
      }
      if (!wroking)list.offer(this);
     }
-   } catch (Exception e) {
+   } catch (Throwable e) {
     on.onError(e);
    }
    if (wroking)clearList();
@@ -94,7 +96,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    while ((def = list.poll()) != null) {
     try {
      def.join();
-    } catch (Exception e) {
+    } catch (Throwable e) {
      on.onError(e);
     }
    }
@@ -220,14 +222,14 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    io.flush();
   } else on.add(new DeflateWriter(io, zip));
  }
- public void writeToZip(File file, ZipEntryM zip) throws IOException {
+ public void writeToZip(Path file, ZipEntryM zip) throws IOException {
   if (!async)
    addFile(file, true, zip);
   else
    on.add(new DeflateWriter(file, zip));
  }
- public ByteBuffer addFile(File file, boolean working, ZipEntryM zip) throws IOException {
-  FileChannel nio=new FileInputStream(file).getChannel();
+ public ByteBuffer addFile(Path file, boolean working, ZipEntryM zip) throws IOException {
+  FileChannel nio=FileChannel.open(file, StandardOpenOption.READ);
   try {
    long size=nio.size();
    if (zip.mode > 0) {
@@ -258,12 +260,14 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   }
   return i;
  }
- public static ByteBuffer inflate(InputStream src, int unsize) throws Exception {
+ public static ByteBuffer inflate(InflaterInputStream src, int unsize) throws Exception {
+  byte brr[]=ZipEntryInput.unbuf(src);
   InputStream in=ZipEntryInput.getRaw(src);
+  int size=in.available();
   ByteBuffer buf;
   try {
-   buf = ByteBuffer.allocate(in.available());
-   in.read(buf.array());
+   buf = ByteBuffer.wrap(brr.length >= size ?brr: (brr = new byte[size]));
+   buf.limit(in.read(brr));
   } finally {
    in.close();
   }
@@ -283,7 +287,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    int len=in.available();
    ByteBuffer outbuf;
    if (in instanceof InflaterInputStream)
-    outbuf = inflate(in, len);
+    outbuf = inflate((InflaterInputStream)in, len);
    else {
     outbuf = ByteBuffer.allocate(len);
     outbuf.position(readLoop(in, outbuf.array()));
@@ -304,11 +308,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void copyIo(InputStream in, ZipEntryM zip) throws IOException {
   ZipEntryOutput out=zipout;
-  ByteBuffer buffer=getBuf();
-  byte buf[]=buffer.array();
   int i;
   LibdeflateCRC32 crc=!zip.notFix ?new LibdeflateCRC32(): null;
   try {
+   ByteBuffer buffer=getBuf();
+   byte buf[]=buffer.array();
    while ((i = readLoop(in, buf)) > 0) {
     if (crc != null)crc.update(buf, 0, i);
     buffer.rewind();
