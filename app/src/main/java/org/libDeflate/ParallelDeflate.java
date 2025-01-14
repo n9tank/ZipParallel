@@ -79,7 +79,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
      }
      if (!wroking)list.offer(this);
     }
-   } catch (Exception e) {
+   } catch (Throwable e) {
     on.onError(e);
    }
    if (wroking)clearList();
@@ -94,7 +94,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    while ((def = list.poll()) != null) {
     try {
      def.join();
-    } catch (Exception e) {
+    } catch (Throwable e) {
      on.onError(e);
     }
    }
@@ -258,12 +258,14 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   }
   return i;
  }
- public static ByteBuffer inflate(InputStream src, int unsize) throws Exception {
+ public static ByteBuffer inflate(InflaterInputStream src, int unsize) throws Exception {
+  byte brr[]=ZipEntryInput.unbuf(src);
   InputStream in=ZipEntryInput.getRaw(src);
+  int size=in.available();
   ByteBuffer buf;
   try {
-   buf = ByteBuffer.allocate(in.available());
-   in.read(buf.array());
+   buf = ByteBuffer.wrap(brr.length >= size ?brr: (brr = new byte[size]));
+   buf.limit(in.read(brr));
   } finally {
    in.close();
   }
@@ -283,7 +285,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    int len=in.available();
    ByteBuffer outbuf;
    if (in instanceof InflaterInputStream)
-    outbuf = inflate(in, len);
+    outbuf = inflate((InflaterInputStream)in, len);
    else {
     outbuf = ByteBuffer.allocate(len);
     outbuf.position(readLoop(in, outbuf.array()));
@@ -304,11 +306,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void copyIo(InputStream in, ZipEntryM zip) throws IOException {
   ZipEntryOutput out=zipout;
-  ByteBuffer buffer=getBuf();
-  byte buf[]=buffer.array();
   int i;
   LibdeflateCRC32 crc=!zip.notFix ?new LibdeflateCRC32(): null;
   try {
+   ByteBuffer buffer=getBuf();
+   byte buf[]=buffer.array();
    while ((i = readLoop(in, buf)) > 0) {
     if (crc != null)crc.update(buf, 0, i);
     buffer.rewind();
