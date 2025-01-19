@@ -4,31 +4,50 @@ import java.util.Vector;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.List;
+import java.util.Queue;
+import java.util.Iterator;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.ArrayDeque;
 
-public abstract class ErrorHandler {
- public volatile Vector<Future> flist=new Vector();
+public class ErrorHandler {
+ public ConcurrentLinkedQueue<Future> flist;
  public ExecutorService pool;
  public LongAdder io=new LongAdder();
- public boolean igron;
  public Vector<Throwable> err=new Vector();
+ public UIPost ui;
  public Canceler can;
  public ErrorHandler(ExecutorService pool, Canceler can) {
   this.pool = pool;
   this.can = can;
+  this.flist = new ConcurrentLinkedQueue();
  }
  public void add(Callable call) throws IOException {
-  Vector<Future> flist=this.flist;
-  if (flist == null)throw new IOException();
+  if (iscancel())throw new IOException();
   io.increment();
-  flist.add(pool.submit(call));
+  fadd(call);
+ }
+ public void fadd(Callable call) {
+  Future fu = pool.submit(call);
+  Queue<Future> flist=this.flist;
+  Iterator<Future> ite=flist.iterator();
+  int size=Runtime.getRuntime().availableProcessors();
+  //仅对于有序的FrokJoin效果不理想
+  while (ite.hasNext() && --size >= 0) {
+   Future item=ite.next();
+   if (item.isDone())
+    ite.remove();
+  }
+  flist.offer(fu);
  }
  public void addN(Callable call) {
-  Vector<Future> flist=this.flist;
-  if (flist == null)pop();
-  else flist.add(pool.submit(call));
+  if (iscancel())pop();
+  else fadd(call);
  }
- public boolean iscancel() {
+ public final boolean iscancel() {
   return flist == null;
  }
  public void pop() {
@@ -42,10 +61,10 @@ public abstract class ErrorHandler {
  public void onError(Throwable e) {
   if (e instanceof InterruptedException)return;
   err.add(e);
-  if (!igron)can.cancel();
+  can.cancel();
  }
  public boolean cancel() {
-  Vector<Future> list=flist;
+  Queue<Future> list=flist;
   if (list == null)return false;
   synchronized (this) {
    list = flist;
@@ -59,5 +78,9 @@ public abstract class ErrorHandler {
   }
   return true;
  }
- public abstract void onClose();
+ public void onClose() {
+  UIPost ui=this.ui;
+  if (ui != null)
+   ui.accept(err);
+ }
 }

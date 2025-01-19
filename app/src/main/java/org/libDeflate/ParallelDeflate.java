@@ -113,14 +113,8 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    on.onError(e);
   }
  }
- public void close() throws IOException {
-  if (async)
-   on.pop();
-  else {
-   ObjectPool.inflateGc();
-   ObjectPool.deflateGc();
-   zipout.close();
-  }
+ public void close() {
+  on.pop();
  }
  public void cancel() {
   if (!on.cancel())return;
@@ -187,15 +181,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  public ConcurrentLinkedQueue list;
  public AtomicBoolean wrok;
  public ZipEntryOutput zipout;
- public boolean async;
  public ErrorHandler on;
- public ParallelDeflate(ZipEntryOutput out, boolean async) {
+ public ParallelDeflate(ZipEntryOutput out) {
   zipout = out;
-  if (async) {
-   list = new ConcurrentLinkedQueue();
-   wrok = new AtomicBoolean();
-   this.async = async;
-  }
+  list = new ConcurrentLinkedQueue();
+  wrok = new AtomicBoolean();
  }
  public ByteBuffer write(IoWriter io, boolean iswrok, ZipEntryM zip) throws Exception {
   BufOutput buf;
@@ -215,18 +205,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void with(IoWriter io, ZipEntryM zip) throws Exception {
   ZipEntryOutput zipout=this.zipout;
-  if (zip.mode <= 0 || !async)
+  if (zip.mode <= 0)
    io.out = zipout.outDef;
-  if (!async) {
-   zipout.putEntry(zip);
-   io.flush();
-  } else on.add(new DeflateWriter(io, zip));
+  on.add(new DeflateWriter(io, zip));
  }
  public void writeToZip(Path file, ZipEntryM zip) throws IOException {
-  if (!async)
-   addFile(file, true, zip);
-  else
-   on.add(new DeflateWriter(file, zip));
+  on.add(new DeflateWriter(file, zip));
  }
  public ByteBuffer addFile(Path file, boolean working, ZipEntryM zip) throws IOException {
   FileChannel nio=FileChannel.open(file, StandardOpenOption.READ);
@@ -336,17 +320,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   zipout.putEntry(zip, true);
   copyIo(in, zip);
  }
- public void copyToZip(InputGet ing, ZipEntryM zip) throws IOException {
-  on.add(new DeflateWriter(ing, zip, true));
- }
- public void writeToZip(InputStream in, ZipEntryM zip) throws Exception {
-  ZipEntryOutput out=zipout;
-  boolean def=zip.mode <= 0;
-  out.putEntry(zip, def);
-  if (def)copyIo(in, zip);
-  else deflate(in, true, zip);
- }
- public void writeToZip(InputGet ing, ZipEntryM zip) throws IOException {
-  on.add(new DeflateWriter(ing, zip, zip.mode <= 0));
+ public void writeToZip(InputGet ing, ZipEntryM zip, boolean raw) throws IOException {
+  on.add(new DeflateWriter(ing, zip, raw || zip.mode <= 0));
  }
 }
