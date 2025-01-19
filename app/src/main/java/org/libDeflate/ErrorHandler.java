@@ -4,9 +4,11 @@ import java.util.Vector;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAdder;
 
 public abstract class ErrorHandler {
+ public AtomicReferenceArray<Future> cache=new AtomicReferenceArray(Runtime.getRuntime().availableProcessors() << 1);
  public volatile Vector<Future> flist=new Vector();
  public ExecutorService pool;
  public LongAdder io=new LongAdder();
@@ -18,17 +20,31 @@ public abstract class ErrorHandler {
   this.can = can;
  }
  public void add(Callable call) throws IOException {
-  Vector<Future> flist=this.flist;
-  if (flist == null)throw new IOException();
+  if (iscancel())throw new IOException();
   io.increment();
-  flist.add(pool.submit(call));
+  fadd(call, false);
+ }
+ public void fadd(Callable call, boolean isCache) {
+  Future fu = pool.submit(call);
+  //尝试取活跃的任务避免数组扩张
+  if (isCache) {
+   AtomicReferenceArray<Future> cache=this.cache;
+   for (int i=0,len=cache.length();i < len;++i) {
+    Future check=cache.get(i);
+    if (check == null || check.isDone()) {
+     if (!cache.compareAndSet(i, check, fu))
+      continue;
+     return;
+    }
+   }
+  }
+  flist.add(fu);
  }
  public void addN(Callable call) {
-  Vector<Future> flist=this.flist;
-  if (flist == null)pop();
-  else flist.add(pool.submit(call));
+  if (iscancel())pop();
+  else fadd(call, true);
  }
- public boolean iscancel() {
+ public final boolean iscancel() {
   return flist == null;
  }
  public void pop() {
@@ -51,6 +67,14 @@ public abstract class ErrorHandler {
    list = flist;
    if (list != null)this.flist = null;
    else return false;
+  }
+  AtomicReferenceArray<Future> cache=this.cache;
+  for (int i=0,len=cache.length();i < len;++i) {
+   Future fu= cache.get(i);
+   if (fu == null)break;
+   boolean isrun=fu.cancel(true);
+   if (!isrun && fu.isCancelled())
+    pop();
   }
   for (Future fu:list) {
    boolean isrun=fu.cancel(true);
