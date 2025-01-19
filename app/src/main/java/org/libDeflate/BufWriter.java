@@ -10,7 +10,7 @@ public class BufWriter extends Writer {
  public void write(char[] cbuf, int off, int len) throws IOException {
   write(CharBuffer.wrap(cbuf, off, len));
  }
- public void write(String str) throws IOException {
+ public void write(CharSequence str) throws IOException {
   write(CharBuffer.wrap(str));
  }
  public void write(CharBuffer str) throws IOException {
@@ -36,7 +36,6 @@ public class BufWriter extends Writer {
  public void close() throws IOException {
   buf.close();
  }
- public boolean flush;
  public BufIo buf;
  public CharsetEncoder en;
  public BufWriter(BufIo out, Charset set) {
