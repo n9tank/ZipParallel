@@ -1,11 +1,11 @@
 package org.libDeflate;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
@@ -17,8 +17,6 @@ import me.steinborn.libdeflate.LibdeflateCompressor;
 import me.steinborn.libdeflate.LibdeflateDecompressor;
 import me.steinborn.libdeflate.LibdeflateJavaUtils;
 import me.steinborn.libdeflate.ObjectPool;
-import java.nio.file.StandardOpenOption;
-import java.nio.file.Path;
 
 public class ParallelDeflate implements AutoCloseable,Canceler {
  public class DeflateWriter implements Callable {
@@ -177,7 +175,8 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   }
   return is ? wrok ?null: buf: old;
  }
- public final static ExecutorService pool=new ForkJoinPool();
+ public final static int CPU=Runtime.getRuntime().availableProcessors();
+ public final static ExecutorService pool=new ForkJoinPool(CPU + 1);
  public ConcurrentLinkedQueue list;
  public AtomicBoolean wrok;
  public ZipEntryOutput zipout;

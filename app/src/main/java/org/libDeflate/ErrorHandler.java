@@ -34,7 +34,7 @@ public class ErrorHandler {
   Future fu = pool.submit(call);
   Queue<Future> flist=this.flist;
   Iterator<Future> ite=flist.iterator();
-  int size=Runtime.getRuntime().availableProcessors();
+  int size=ParallelDeflate.CPU;
   //仅对于有序的FrokJoin效果不理想
   while (ite.hasNext() && --size >= 0) {
    Future item=ite.next();
