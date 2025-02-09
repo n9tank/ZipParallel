@@ -10,7 +10,9 @@ public class BufOutput implements BufIo {
  }
  ByteBuffer buf;
  public BufOutput(int size) {
-  buf = ByteBuffer.allocateDirect(size);
+  boolean isd=size < 0;
+  size = size & 0x7fffffff;
+  buf = isd ?RC.newDbuf(size): RC.newbuf(size);
  }
  public static final int tableSizeFor(int cap) {  
   int n = cap - 1;  
@@ -19,13 +21,13 @@ public class BufOutput implements BufIo {
   n |= n >>> 4;  
   n |= n >>> 8;  
   n |= n >>> 16;  
-  return n + 1;  
+  return n + 1;
  }
  public ByteBuffer getBuf() {
   return buf;
  }
  public static ByteBuffer copy(ByteBuffer old, int size) {
-  ByteBuffer buf=ByteBuffer.allocateDirect(size);
+  ByteBuffer buf=old.isDirect() ?ByteBuffer.allocateDirect(size): RC.newbuf(size);
   old.flip();
   buf.put(old);
   return buf;
@@ -35,8 +37,7 @@ public class BufOutput implements BufIo {
   this.buf = old = copy(old, old.capacity() << 1);
   return old;
  }
- public void end() {
- }
+ public void end() {}
  public int write(ByteBuffer src) {
   int len=src.remaining();
   ByteBuffer buf=this.buf;
@@ -46,6 +47,5 @@ public class BufOutput implements BufIo {
   buf.put(src);
   return len;
  }
- public void close() {
- }
+ public void close() {}
 }

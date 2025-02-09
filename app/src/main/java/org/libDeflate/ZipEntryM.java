@@ -2,9 +2,8 @@ package org.libDeflate;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.io.IOException;
+import me.steinborn.libdeflate.LibdeflateCRC32;
 
 public class ZipEntryM {
  public byte mode;
@@ -15,6 +14,12 @@ public class ZipEntryM {
  public int xdostime;
  public long start;
  public boolean notFix;
+ public void crc(ByteBuffer buf, int off, int len) {
+  int crc=this.crc;
+  if (buf.isDirect())
+   this.crc = LibdeflateCRC32.crc32Direct(crc, buf, off, len);
+  this.crc = LibdeflateCRC32.crc32Heap(crc, buf.array(), buf.arrayOffset() + off, len);
+ }
  public ZipEntryM(CharSequence str, int lvl) {
   name = str;
   mode = (byte)lvl;

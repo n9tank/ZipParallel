@@ -6,10 +6,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
 import java.nio.channels.FileChannel;
 
-public class ByteBufIo extends OutputStream implements BufIo {
- public void write(int b) {
-  throw new RuntimeException();
- }
+public class ByteBufIo implements BufIo {
  public boolean isOpen() {
   return true;
  }
@@ -52,16 +49,18 @@ public class ByteBufIo extends OutputStream implements BufIo {
    wt.write(buf);
   buf.clear();
  }
- public ByteBuffer getBuf(int page) {
+ public ByteBuffer getBuf(int page) throws IOException {
   ByteBuffer buf=this.buf;
-  if (buf.remaining() < page) {
-   buf = page < buf.capacity() ?ByteBuffer.allocate(page): ByteBuffer.allocateDirect(page);
+  int len=buf.remaining();
+  if (len == 0) {
+   flush();
+   len = buf.capacity();
+  }
+  if (len < page) {
+   buf = RC.newbuf(page);
    buf.order(ByteOrder.LITTLE_ENDIAN);
   }
   return buf;
- }
- public void write(byte brr[], int off, int len) throws IOException {
-  write(ByteBuffer.wrap(brr, off, len));
  }
  public int write(ByteBuffer put) throws IOException {
   int len=put.remaining();
@@ -70,16 +69,16 @@ public class ByteBufIo extends OutputStream implements BufIo {
   if (len >= buf.capacity()) {
    int pos=buf.position();
    if (pos > 0) {
-    pos &= 4095;
+    pos &= RC.PAGESIZE_4095;
     if (pos > 0) {
-     int rem=4096 - pos;
+     int rem=RC.PAGESIZE_N4096 - pos;
      len -= rem;
      put.limit(put.position() + rem);
      buf.put(put);
     }
     flush();
    }
-   put.limit(put.position() + (len & -4096));
+   put.limit(put.position() + (len & RC.PAGESIZE_N4096));
    WritableByteChannel wt=this.wt;
    while (put.hasRemaining())
     wt.write(put);

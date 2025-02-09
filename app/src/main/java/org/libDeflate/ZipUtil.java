@@ -4,7 +4,7 @@ import java.util.Random;
 
 public class ZipUtil {
  //这个不属于标准库，所以性能啥的咱不管
- public static ZipEntryM newEntry(String name, int lvl) {
+ public static final ZipEntryM newEntry(String name, int lvl) {
   ZipEntryM zip= new ZipEntryM(name, lvl);
   zip.notFix = true;
   return zip;
@@ -17,30 +17,21 @@ public class ZipUtil {
    out.upLength(4);
   } else {
    Random ran=new Random();
-   int j=0;
-   int all=0;
+   ZipEntryOutput.DeflaterIo def=out.outDef;
    int i=0;
    do {
-    int n= ran.nextInt(rnd[i++]) + rnd[i++];
-    all += n;
-    rnd[j++] = n;
+    int size= ran.nextInt(rnd[i++]) + rnd[i++];
+    ByteBuffer warp=ByteBuffer.allocate(size);
+    byte[] buf=warp.array();
+    def.copy.buf = warp;
+    ran.nextBytes(buf);
+    for (int k=0;k < size;++k)
+     buf[k] &= 63;
+    warp.position(size);
+    ZipEntryM ze= newEntry(null, 1);
+    out.putEntryOnlyIn(ze);
+    def.setEntry(ze);
    }while (i < len);
-   byte[] buf=new byte[all];
-   //由于输入页不能太多所以直接分配就好
-   ran.nextBytes(buf);
-   len = buf.length;
-   for (int k=0;k < len;++k)
-    buf[k] &= 63;
-   //让压缩工作
-   int c=0;
-   ZipEntryOutput.DeflaterIo def=out.outDef;
-   i = 0;
-   do{
-    int wlen=rnd[i];
-    def.src = ByteBuffer.wrap(buf, c, wlen);
-    out.putEntry(newEntry(null, 1), false, true);
-    c += wlen;
-   }while(++i < j);
    out.closeEntry();
   }
  }

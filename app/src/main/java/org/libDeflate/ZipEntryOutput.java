@@ -15,78 +15,73 @@ import java.util.ArrayList;
 import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
 import java.io.File;
+import java.nio.channels.ReadableByteChannel;
 
 
 public class ZipEntryOutput extends ByteBufIo {
- public class DeflaterIo extends OutputStream implements BufIo {
-  public LibdeflateCRC32 crc=new LibdeflateCRC32();
+ public class DeflaterIo implements BufIo {
   public LibdeflateCompressor def;
   public int lvl;
-  public BufOutput copy;
+  public BufIo io;
+  public BufOutput copy=new BufOutput(0);
   public ByteBuffer old;
-  public ByteBuffer src;
   public boolean flush;
-  public void write(int b) {
-   throw new RuntimeException();
-  }
   public boolean isOpen() {
    return true;
   }
   public ByteBuffer getBuf() {
+   return io.getBuf();
+  }
+  public void Crc() {
+   if (!RC.zip_crc)return;
    ZipEntryOutput zip=ZipEntryOutput.this;
-   return (zip.entry.mode > 0 ?copy: zip).getBuf();
+   ZipEntryM en=zip.entry;
+   if (en.mode <= 0 && !en.notFix) {
+    ByteBuffer buf=zip.buf;
+    int zpos=zip.pos;
+    en.crc(buf, zpos, buf.position() - zpos);
+   }
   }
   public void end() {
-   ZipEntryOutput zip=ZipEntryOutput.this;
-   if (zip.entry.mode <= 0)
-    zip.end();
+   Crc();
+   io.end();
   }
   public ByteBuffer getBufFlush() throws IOException {
-   ZipEntryOutput zip=ZipEntryOutput.this;
-   boolean raw;
-   BufIo bufio = ((raw = zip.entry.mode <= 0) ?zip: copy);
-   if (raw && !zip.entry.notFix) {
-    ByteBuffer buf=zip.buf;
-    int pos=buf.position();
-    buf.flip();
-    buf.position(zip.pos);
-    crc.update(buf);
-    buf.clear();
-    buf.position(pos);
-   }
-   return bufio.getBufFlush();
+   Crc();
+   return io.getBufFlush();
   }
-  public void putEntry(ZipEntryM zip) {
-   crc.reset();
+  public void putEntry(ZipEntryM zip) throws IOException {
+   ZipEntryOutput.this.putEntry(zip);
+   setEntry(zip);
+  }
+  public void setEntry(ZipEntryM zip) {
    int l=zip.mode;
    if (l > 0 && l != lvl) {
     LibdeflateCompressor def = this.def;
     if (def != null)def.close();
     this.def = new LibdeflateCompressor(l, 0);
-    if (src == null && copy == null)
-     copy = new BufOutput(1024);
+    BufOutput copy=this.copy;
+    ByteBuffer buf=copy.buf;
+    int size=zip.size;
+    if (buf == null || size > buf.capacity())
+     copy.buf = RC.newbuf(copy.tableSizeFor(size));
     lvl = l;
    }
+   io = l > 0 ?ZipEntryOutput.this: copy;
    flush = true;
   }
   public int write(ByteBuffer src) throws IOException {
-   ZipEntryOutput zip=ZipEntryOutput.this;
-   ZipEntryM en=zip.entry;
-   int len=src.remaining();
-   if (en.mode <= 0) {
-    if (!en.notFix) {
-     crc.update(src);
-     src.rewind();
-    }
-    return zip.write(src);
-   } else copy.write(src);
-   return len;
+   if (RC.zip_crc) {
+    ZipEntryOutput zip=ZipEntryOutput.this;
+    ZipEntryM en=zip.entry;
+    if (en.mode <= 0 && !en.notFix)
+     en.crc(src, src.position(), src.remaining());
+   }
+   return io.write(src);
   }
-  public void write(byte[] b, int off, int len) throws IOException {
-   write(ByteBuffer.wrap(b, off, len));
-  }
-  public void free() { 
-   copy = null;
+  public void free() {
+   io = null;
+   copy.buf = null;
    old = null;
    LibdeflateCompressor def=this.def;
    if (def != null) {
@@ -100,13 +95,11 @@ public class ZipEntryOutput extends ByteBufIo {
    ZipEntryOutput zip=ZipEntryOutput.this;
    ZipEntryM en=zip.entry;
    if (en.mode > 0) {
-    ByteBuffer src=this.src;
-    if (src == null) {
-     src = copy.buf;
-     src.flip();
-    } else this.src = null;
-    this.old = ParallelDeflate.deflate(def, crc, zip, src, this.old , true, false, en);
-   } else writeEntryModify(en);
+    ByteBuffer src=this.copy.buf;
+    src.flip();
+    this.old = ParallelDeflate.deflate(def, zip, src, this.old , true, false, en);
+    src.clear();
+   }
   } 
  }
  public static final int AsInput=1;
@@ -124,28 +117,25 @@ public class ZipEntryOutput extends ByteBufIo {
  public ZipEntryM entry;
  public int flag=1;
  public CharsetEncoder charsetEncoder;
- public ByteBuffer tbuf;
  public CharsetEncoder utf8=StandardCharsets.UTF_8.newEncoder();
  public ZipEntryOutput(File out) throws IOException {
   this(out.toPath());
  }
+ //强烈推荐至少64K缓存，此缓存不会尝试动态扩容，因此需要尽可能的大
  public ZipEntryOutput(Path out) throws IOException {
   //文件模式需要支持并发写出，鸽了。
-  this(out, 16384, null);
+  this(out, RC.NSIZE, null);
  }
  public ZipEntryOutput(Path fs, int size, CharsetEncoder utf) throws IOException {
-  this(FileChannel.open(fs, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE), size, utf);
+  this(FileChannel.open(fs, StandardOpenOption.CREATE, StandardOpenOption.WRITE), size, utf);
   outFile = fs;
  }
  public ZipEntryOutput(WritableByteChannel wt) {
-  this(wt, 16384, null);
+  this(wt, RC.NSIZE, null);
  }
  public ZipEntryOutput(WritableByteChannel wt, int size, CharsetEncoder utf) {
   super(wt, size);
   charsetEncoder = utf;
-  ByteBuffer buf=ByteBuffer.allocateDirect(16);
-  buf.order(ByteOrder.LITTLE_ENDIAN);
-  tbuf = buf;
  }
  public int pos;
  public ByteBuffer getBuf() {
@@ -154,14 +144,12 @@ public class ZipEntryOutput extends ByteBufIo {
   return buf;
  }
  public void end() {
-  int set=buf.position();
-  upLength(set - pos);
-  pos = set;
+  upLength(buf.position() - pos);
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
   upLength(buf.position() - pos);
-  super.getBufFlush();
+  flush();
   pos = 0;
   return buf;
  }
@@ -183,21 +171,25 @@ public class ZipEntryOutput extends ByteBufIo {
  public boolean isOpen() {
   return true;
  }
- public WritableByteChannel getNio() throws IOException {
-  flush();
-  return wt;
+ public void copyFromAndCrc32(ReadableByteChannel ch) throws IOException {
+  ByteBuffer buf=this.buf;
+  boolean usecrc=RC.zip_crc && !entry.notFix;
+  int crc=0;
+  while (true) {
+   int pos=buf.position();
+   int len = ch.read(buf);
+   if (len == 0)flush();
+   else if (len > 0) {
+    if (usecrc)crc = LibdeflateCRC32.crc32Direct(crc, buf, pos, len);
+    upLength(len);
+   } else break;
+  }
+  if (usecrc)entry.crc = crc;
  }
  public void upLength(long i) {
   if (list.size() == 0)
    headOff += i;
   off += i;
- }
- public void write(int b) {
-  throw new RuntimeException();
- }
- public void write(byte[] b, int off, int len) throws IOException {
-  super.write(ByteBuffer.wrap(b, off, len));
-  upLength(len);
  }
  public int write(ByteBuffer src) throws IOException {
   int i=super.write(src);
@@ -209,62 +201,24 @@ public class ZipEntryOutput extends ByteBufIo {
   if (ze != null) {
    outDef.close();
    if (ze.size < 0) {
-    if (ze.mode <= 0)ParallelDeflate.fixEntry(this, outDef.crc, ze);
-    if ((flag & AsInput) > 0 && outFile == null) {
+    if (ze.mode <= 0)ParallelDeflate.fixEntry(this, ze);
+    if ((flag & AsInput) > 0) {
      writeEntryFix(ze);
     }
    }
    entry = null;
   }
  }
- public void putEntry(ZipEntryM zip) throws IOException {
-  putEntry(zip, false, false);
- }
- public void putEntry(ZipEntryM zip, boolean raw) throws IOException {
-  putEntry(zip, raw, false);
- }
- public void putEntry(ZipEntryM zip, boolean raw, boolean onlyIn) throws IOException {
+ public void putEntryOnlyIn(ZipEntryM zip) throws IOException {
   closeEntry();
-  if (!raw)outDef.putEntry(zip);
   entry = zip;  
   zip.start = off;
-  if (!onlyIn)list.add(zip);
   writeEntry(zip);
   last = off;
  }
- public void writeEntryModify(ZipEntryM ze) {
-  if ((flag & AsInput) == 0 || ze.notFix || ze.size <= 0)return;
-  writeEntryModify(ze, null, size(), buf);
- }
- public void writeEntryModify(ZipEntryM zip, ByteBuffer mmap, long pos, ByteBuffer buf) {
-  long start=zip.start + 14;
-  ByteBuffer buff;
-  int cpos=buf.position();
-  int off=(int)(pos - start);
-  if (start >= pos) {
-   buff = buf;
-   buff.position(off);
-  } else {
-   if (mmap == null)return;
-   if (start + 12 >= pos) {
-    buff = tbuf;
-   } else buff = mmap;
-   mmap.position((int)start);
-  }
-  buff.putInt(zip.size);
-  buff.putInt(zip.csize);
-  buff.putInt(zip.crc);
-  if (mmap != null && buff != buf) {
-   buff.rewind();
-   buff.limit(off);
-   mmap.put(buf);
-   buff.limit(12);
-   buf.rewind();
-   buf.put(buff);
-   buff = buf; 
-  } else zip.notFix = true;
-  buff.clear();
-  buf.position(cpos);
+ public void putEntry(ZipEntryM zip) throws IOException {
+  putEntryOnlyIn(zip);
+  list.add(zip);
  }
  public long size() {
   return off - buf.position();
@@ -305,39 +259,20 @@ public class ZipEntryOutput extends ByteBufIo {
   int size=zip.size;
   if (zip.notFix || size <= 0)return;
   ByteBuffer buf=this.buf;
-  ByteBuffer tbuf=this.tbuf;
-  ByteBuffer buff=buf.remaining() < 16 ?tbuf: buf;
-  buff.putInt(0x08074b50);
-  buff.putInt(zip.crc);
-  buff.putInt(zip.csize);
-  buff.putInt(size);
-  releaseBuf(buff, 16);
-  tbuf.clear();
+  if (buf.remaining() < 16) {
+   buf = ByteBuffer.allocate(16);
+   buf.order(ByteOrder.LITTLE_ENDIAN);
+  }
+  buf.putInt(0x08074b50);
+  buf.putInt(zip.crc);
+  buf.putInt(zip.csize);
+  buf.putInt(size);
+  releaseBuf(buf, 16);
  }
  public void finish() throws IOException {
   closeEntry();
   outDef.free();
   int flag=this.flag;
-  if ((flag & AsInput) > 0 && outFile != null) {
-   FileChannel nio=(FileChannel)wt;
-   long off=0;
-   long fileSize=size();
-   ByteBuffer next=null;
-   ByteBuffer map=null;
-   int PAGESIZE=1024 * 1024 * 512;
-   for (ZipEntryM ze:list) {
-    if (ze.notFix || ze.size <= 0)continue;
-    long start=ze.start + 14;
-    if (start > off) {
-     if (next instanceof MappedByteBuffer)map = next;
-     else map =  nio.map(FileChannel.MapMode.READ_WRITE, off, Math.min(PAGESIZE, fileSize - off));
-     off += PAGESIZE;
-     map.order(ByteOrder.LITTLE_ENDIAN);
-     next =  off > fileSize ?buf: nio.map(FileChannel.MapMode.READ_WRITE, off, Math.min(PAGESIZE, fileSize - off));
-    }
-    writeEntryModify(ze, map, Math.min(fileSize, off), next);
-   }
-  }
   if ((flag & onlyInput) == 0) {
    long size=off;
    for (ZipEntryM ze:list) {

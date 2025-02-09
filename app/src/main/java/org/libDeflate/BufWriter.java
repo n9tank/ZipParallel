@@ -18,7 +18,7 @@ public class BufWriter extends Writer {
   ByteBuffer buf=put.getBuf();
   CharsetEncoder en=this.en;
   while (str.hasRemaining()) {
-   if (en.encode(str, buf, false).isOverflow())
+   if (!buf.hasRemaining() || en.encode(str, buf, false).isOverflow())
     buf = put.getBufFlush();
   }
  }
