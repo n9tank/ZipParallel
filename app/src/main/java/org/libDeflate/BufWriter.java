@@ -33,8 +33,11 @@ public class BufWriter extends Writer {
   put.end();
   en.reset();
  }
+ //如果在zip输入原始流，关闭crc支持的话，会导致zip被关掉
  public void close() throws IOException {
-  buf.close();
+  BufIo buf=this.buf;
+  if (buf != null)
+   buf.close();
  }
  public BufIo buf;
  public CharsetEncoder en;

@@ -14,9 +14,19 @@ import java.nio.channels.WritableByteChannel;
 
 public class ZipInputGet extends IoWriter {
  public void flush() throws Exception {
+  BufIo out=this.out;
+  if (RC.zip_read_mmap) {
+   if (bufSize < 0) {
+    ByteBuffer buf=zip.getBuf(en);
+    if (out instanceof BufOutput) {
+     ((BufOutput)out).buf = buf;
+     buf.position(buf.limit());
+    } else out.write(buf);
+    return;
+   }
+  }
   ReadableByteChannel reader=io();
   try {
-   BufIo out=this.out;
    ByteBuffer buf=out.getBuf();
    int i;
    while (true) {
@@ -39,11 +49,16 @@ public class ZipInputGet extends IoWriter {
  public static BufferedReader reader(zipFile zip, zipEntry en, Charset set) throws IOException  {
   int size=(int) Math.min(en.size, 8192);
   NioReader read;
-  //已修复NioReader没有检查导致的性能问题
-  if (en.mode > 0) 
-   read = new NioReader(zip.open(zip.getBuf(en)), ByteBuffer.allocate(size), set);
-  else read = new NioReader(zip.openChannel(en), (int)Math.min(en.size, 65536l), set);
-  //这是为了解约内存
+  if (!RC.zip_read_mmap) {
+   if (en.mode > 0) 
+    read = new NioReader(zip.open(zip.getBuf(en)), ByteBuffer.allocate(size), set);
+   else read = new NioReader(zip.openChannel(en), (int)Math.min(en.size, 65536l), set);
+  } else {
+   ByteBuffer buf=zip.getBuf(en);
+   if (en.mode > 0) 
+    read = new NioReader(zip.open(buf), ByteBuffer.allocate(size), set);
+   else read = new NioReader(null, buf, set);
+  }
   return new BufferedReader(read, size);
  }
  public zipFile zip;

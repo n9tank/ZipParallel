@@ -30,7 +30,9 @@ public class ZipEntryOutput extends ByteBufIo {
    return true;
   }
   public ByteBuffer getBuf() {
-   return io.getBuf();
+   if (RC.zip_crc)
+    return io.getBuf();
+   return null;
   }
   public void Crc() {
    if (!RC.zip_crc)return;
@@ -43,12 +45,17 @@ public class ZipEntryOutput extends ByteBufIo {
    }
   }
   public void end() {
-   Crc();
-   io.end();
+   if (RC.zip_crc) {
+    Crc();
+    io.end();
+   }
   }
   public ByteBuffer getBufFlush() throws IOException {
-   Crc();
-   return io.getBufFlush();
+   if (RC.zip_crc) {
+    Crc();
+    return io.getBufFlush();
+   }
+   return null;
   }
   public void putEntry(ZipEntryM zip) throws IOException {
    ZipEntryOutput.this.putEntry(zip);

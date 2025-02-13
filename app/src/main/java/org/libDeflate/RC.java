@@ -12,8 +12,9 @@ public class RC {
    ByteBuffer.allocate(size):
    ByteBuffer.allocateDirect(size);
  }
- public static final boolean zip_read_mmap=false;
- public static final int MMAPSIZE=1024 * 1024;
+ public static final boolean zip_read_mmap=true;
+ public static final boolean relesse=true;
+ public static final int MMAPSIZE=1024 * 64;
  public static final int DSIZE=1024 * 64;
  public static final int NSIZE=1024 * 64;
  public static final int SMSIZE=8192;
@@ -23,4 +24,6 @@ public class RC {
  public static final boolean zip_zlib=false;
  public static final boolean zip_addFile=false;
  public static final boolean zip_crc=false;
+ //如果你要用辅助流的内部缓冲支持你必须开启crc
+ //当你不启用crc时，底层流自动链接到ZipEntryOutput
 }

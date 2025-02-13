@@ -113,7 +113,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   return null;
  }
  public ByteBuffer deflate(ByteBuffer src, boolean wrok, ZipEntryM ze) throws IOException {
-  src.flip();
   LibdeflateCompressor def =ObjectPool.allocDeflate(ze.mode, 0);
   ByteBuffer buf;
   try {
@@ -148,6 +147,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   }
   ze.csize = outlen;
   if (wrok)out.releaseBuf(buf, outlen);
+  //如果输入的buf允许偏移，这没有必要
+  /*else{
+   buf.limit(buf.position());
+   buf.position(zpos);
+   }*/
+  else buf.flip();
   return is ? (wrok ?null: buf): old;
  }
  public final static int CPU=Runtime.getRuntime().availableProcessors();
@@ -169,14 +174,14 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   else {
    buf = null;
    zipout.putEntry(zip);
-   if (RC.zip_crc && out instanceof ZipEntryOutput.DeflaterIo) {
+   if (RC.zip_crc && out instanceof ZipEntryOutput.DeflaterIo)
     zipout.outDef.io = zipout;
-   }
   }
   io.flush();
   if (buf != null) {
-   ByteBuffer src=buf.buf;
-   return deflate(src, iswrok, zip);
+   ByteBuffer bytebuf=buf.buf;
+   bytebuf.flip();
+   return deflate(bytebuf, iswrok, zip);
   }
   return null;
  }
@@ -191,21 +196,27 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public ByteBuffer addFile(Path file, boolean working, ZipEntryM zip) throws IOException {
   FileChannel nio=FileChannel.open(file, StandardOpenOption.READ);
+  long size=nio.size();
+  //经常mmap还是有比较高的代价的
+  ByteBuffer mmap=RC.zip_read_mmap && (RC.MMAPSIZE <= 0 || size >= RC.MMAPSIZE) ?nio.map(FileChannel.MapMode.READ_ONLY, 0, size): null;
   try {
    if (zip.mode > 0) {
-    long size=nio.size();
-    ByteBuffer buf;
-    if (RC.zip_read_mmap && size >= RC.MMAPSIZE)buf = nio.map(FileChannel.MapMode.READ_ONLY, 0, size);
-    else {
-     buf = RC.newDbuf((int)size);
-     nio.read(buf);
-     buf.flip();
+    if (mmap == null) {
+     mmap = RC.newDbuf((int)size);
+     nio.read(mmap);
+     mmap.flip();
     }
-    return deflate(buf, working, zip);
+    return deflate(mmap, working, zip);
    } else {
     ZipEntryOutput data=zipout;
     data.putEntry(zip);
-    data.copyFromAndCrc32(nio);
+    if (mmap != null) {
+     ZipEntryM en= data.entry;
+     if (RC.zip_crc && !en.notFix)
+      en.crc(mmap, mmap.position(), mmap.limit());
+     //不推荐在mmap模型下启用crc，无法保证操作系统何时进行换页
+     data.write(mmap);
+    } else data.copyFromAndCrc32(nio);
    }
   } finally {
    nio.close();
@@ -215,7 +226,10 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  public void writeToZip(ZipInputGet input, ZipEntryM zip, boolean raw) throws Exception {
   with(input, zip, raw = (raw || (zip.mode <= 0 && (!RC.zip_crc || zip.notFix))));
   int size=(int)input.en.size;
-  if (raw)size |= 0x80000000;
+  if (raw) {
+   if (!RC.zip_read_mmap)size |= 0x80000000;
+   else size = 0x80000000;
+  }
   input.bufSize = size;
  }
  public static void fixEntry(ZipEntryOutput out, ZipEntryM zip) {
