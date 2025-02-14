@@ -9,17 +9,16 @@ public class ZipEntryM {
  public byte mode;
  public CharSequence name;
  public int csize;
- public int size=-1;
+ public int size;
  public int crc;
  public int xdostime;
  public long start;
  public boolean notFix;
  public void crc(ByteBuffer buf, int off, int len) {
   int crc=this.crc;
-  off += buf.arrayOffset();
   if (buf.isDirect())
    this.crc = LibdeflateCRC32.crc32Direct(crc, buf, off, len);
-  this.crc = LibdeflateCRC32.crc32Heap(crc, buf.array(), off, len);
+  this.crc = LibdeflateCRC32.crc32Heap(crc, buf.array(), buf.arrayOffset() + off, len);
  }
  public ZipEntryM(CharSequence str, int lvl) {
   name = str;

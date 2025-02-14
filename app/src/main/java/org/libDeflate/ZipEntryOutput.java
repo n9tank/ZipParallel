@@ -70,7 +70,7 @@ public class ZipEntryOutput extends ByteBufIo {
     ByteBuffer buf=copy.buf;
     int size=zip.size;
     if (buf == null || size > buf.capacity())
-     copy.buf = RC.newbuf(copy.tableSizeFor(size));
+     copy.buf = RC.newDbuf(copy.tableSizeFor(size));
     lvl = l;
    }
    io = l > 0 ?ZipEntryOutput.this: copy;
@@ -86,7 +86,6 @@ public class ZipEntryOutput extends ByteBufIo {
    return io.write(src);
   }
   public void free() {
-   if (!RC.zip_deflate_io)return;
    io = null;
    copy.buf = null;
    old = null;
@@ -108,7 +107,7 @@ public class ZipEntryOutput extends ByteBufIo {
     int size=LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
     if (drc.remaining() < size) {
      if (old == null || old.remaining() < size)
-      this.old = old = RC.newbuf(BufOutput.tableSizeFor(size));
+      this.old = old = RC.newDbuf(BufOutput.tableSizeFor(size));
      drc = old;
     }
     src.flip();
@@ -126,7 +125,7 @@ public class ZipEntryOutput extends ByteBufIo {
  public static final int igonUtf8=16;
  public static final int zip64enmode=32;
  public long last;
- public DeflaterIo outDef=new DeflaterIo();
+ public DeflaterIo outDef=!RC.zip_deflate_io ?null: new DeflaterIo();
  public ArrayList<ZipEntryM> list=new ArrayList();
  public long off;
  public long headOff;
@@ -148,19 +147,24 @@ public class ZipEntryOutput extends ByteBufIo {
   int outlen=def.compress(src, drc);
   src.position(srcpos);
   boolean isbig;
-  if (isbig = (this.flag & this.AsInput) == 0 && outlen >= srclen) {
+  if (isbig = ((this.flag & this.AsInput) == 0 && outlen >= srclen)) {
    ze.mode = 0;
    outlen = srclen;
   }
   ze.csize = outlen;
-  boolean nzbuf;
+  boolean nzbuf=false;
   if ((nzbuf = drc != this.buf) || isbig) {
-   drc.position(zpos);
    if (nzbuf)drc.limit(drc.position());
+   drc.position(zpos);
    nzbuf = true;
   }
   if (isbig)drc = src;
-  if (wrok && nzbuf)write(drc);
+  if (wrok) {
+   if (nzbuf)
+    write(drc);
+   else
+    upLength(outlen);
+  }
   return drc;
  }
  //强烈推荐至少64K缓存，此缓存不会尝试动态扩容，因此需要尽可能的大
@@ -243,11 +247,12 @@ public class ZipEntryOutput extends ByteBufIo {
   if (ze != null) {
    if (RC.zip_deflate_io)
     outDef.close();
-   if (ze.size < 0) {
-    if (ze.mode <= 0)ParallelDeflate.fixEntry(this, ze);
-    if ((flag & AsInput) > 0) {
-     writeEntryFix(ze);
-    }
+   int size = (int)(off - last);
+   if (ze.mode <= 0)
+    ze.size = size;
+   ze.csize = size;
+   if ((flag & AsInput) > 0) {
+    writeEntryFix(ze);
    }
    entry = null;
   }
@@ -260,8 +265,8 @@ public class ZipEntryOutput extends ByteBufIo {
   last = off;
  }
  public void putEntry(ZipEntryM zip) throws IOException {
-  putEntryOnlyIn(zip);
   list.add(zip);
+  putEntryOnlyIn(zip);
  }
  public long size() {
   return off - buf.position();
@@ -314,7 +319,8 @@ public class ZipEntryOutput extends ByteBufIo {
  }
  public void finish() throws IOException {
   closeEntry();
-  outDef.free();
+  if (RC.zip_deflate_io)
+   outDef.free();
   int flag=this.flag;
   if ((flag & onlyInput) == 0) {
    long size=off;
@@ -334,9 +340,10 @@ public class ZipEntryOutput extends ByteBufIo {
   } finally {
    WritableByteChannel wt=this.wt;
    if (wt != null) {
-    this.wt = null;
-    outDef.free();
+    if (RC.zip_deflate_io)
+     outDef.free();
     super.close();
+    this.wt = null;
    }
   }
  }

@@ -19,6 +19,7 @@ public class ByteBufIo implements BufIo {
   this.buf = buf;
  }
  public void close() throws IOException {
+  WritableByteChannel wt=this.wt;
   try {
    if (buf != null) {
     flush();

@@ -20,47 +20,30 @@ public class ZipUtil {
   } else {
    Random ran=new Random();
    int i=0;
-   if (RC.zip_deflate_io) {
-    ZipEntryOutput.DeflaterIo def=out.outDef;
+   ByteBuffer old=null;
+   LibdeflateCompressor def= new LibdeflateCompressor(1, 0);
+   try {
     do {
      int size= ran.nextInt(rnd[i++]) + rnd[i++];
-     ByteBuffer warp=ByteBuffer.allocate(size);
-     byte[] buf=warp.array();
-     def.copy.buf = warp;
+     ByteBuffer src=ByteBuffer.allocate(size);
+     byte[] buf=src.array();
      ran.nextBytes(buf);
      for (int k=0;k < size;++k)
       buf[k] &= 63;
-     warp.position(size);
      ZipEntryM ze= newEntry(null, 1);
      out.putEntryOnlyIn(ze);
-     def.setEntry(ze);
+     ByteBuffer drc=out.buf;
+     int bufsize=LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
+     if (drc.remaining() < bufsize) {
+      if (old == null || old.remaining() < bufsize)
+       old = RC.newDbuf(BufOutput.tableSizeFor(bufsize));
+      drc = old;
+     }
+     out.deflate(def, src, drc , true, ze);
+     if (old != null)old.clear();
     }while (i < len);
-    out.closeEntry();
-   } else {
-    ByteBuffer old=null;
-    LibdeflateCompressor def= new LibdeflateCompressor(1, 0);
-    try {
-     do {
-      int size= ran.nextInt(rnd[i++]) + rnd[i++];
-      ByteBuffer src=ByteBuffer.allocate(size);
-      byte[] buf=src.array();
-      ran.nextBytes(buf);
-      for (int k=0;k < size;++k)
-       buf[k] &= 63;
-      ZipEntryM ze= newEntry(null, 1);
-      out.putEntryOnlyIn(ze);
-      ByteBuffer drc=out.buf;
-      int bufsize=LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
-      if (drc.remaining() < bufsize) {
-       if (old == null || old.remaining() < bufsize)
-        old = RC.newbuf(BufOutput.tableSizeFor(size));
-       drc = old;
-      }
-      out.deflate(def, src, drc , true, ze);
-     }while (i < len);
-    } finally {
-     def.close();
-    }
+   } finally {
+    def.close();
    }
   }
  }

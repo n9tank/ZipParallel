@@ -200,7 +200,9 @@ public class zipFile implements AutoCloseable {
          if (buf.getInt(0) == 0x06064b50) {
           centot = (int)buf.getLong(32);
           cenlen = buf.getLong(40);
+          cenoff = buf.getLong(48);
           cenpos = nextpos - cenlen;
+          headoff = cenpos - cenoff;
          }
         }
        }
@@ -234,7 +236,9 @@ public class zipFile implements AutoCloseable {
         if (buf.getInt(nextpos) == 0x06064b50) {
          centot = (int)buf.getLong(nextpos + 32);
          cenlen = buf.getLong(nextpos + 40);
+         cenoff = buf.getLong(nextpos + 48);
          cenpos = nextpos - cenlen;
+         headoff = cenpos - cenoff;
         }
        }
       }

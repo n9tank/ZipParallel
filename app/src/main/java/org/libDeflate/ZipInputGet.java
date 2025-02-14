@@ -1,16 +1,10 @@
 package org.libDeflate;
 
-import java.io.IOException;
-import java.io.Reader;
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
 import java.io.BufferedReader;
-import android.util.SizeF;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.WritableByteChannel;
+import java.nio.charset.Charset;
 
 public class ZipInputGet extends IoWriter {
  public void flush() throws Exception {
