@@ -136,8 +136,7 @@ public class zipFile implements AutoCloseable {
   return new InputStream(){
    public int read() {
     //读取一个b违背性能要求请不要这么做
-    if (RC.relesse)return 0;
-    throw new RuntimeException();
+    return 0;
    }
    public int read(byte b[], int off, int len) throws IOException {
     return ch.read(ByteBuffer.wrap(b, off, len));

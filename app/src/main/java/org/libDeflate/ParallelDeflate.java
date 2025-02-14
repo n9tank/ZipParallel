@@ -105,55 +105,27 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   zipout.cancel();
   return;
  }
- public ByteBuffer tryWrite(ByteBuffer src, ZipEntryM ze) throws IOException {
-  if (src == null || wrok.getAndSet(true))return src;
-  ZipEntryOutput zipout=this.zipout;
-  zipout.putEntry(ze);
-  zipout.write(src);
-  return null;
- }
  public ByteBuffer deflate(ByteBuffer src, boolean wrok, ZipEntryM ze) throws IOException {
   LibdeflateCompressor def =ObjectPool.allocDeflate(ze.mode, 0);
   ByteBuffer buf;
+  ZipEntryOutput zipout=this.zipout;
+  int size=LibdeflateJavaUtils.getBufSize(src.remaining(), 0);
+  ByteBuffer drc=zipout.buf;
   try {
-   buf = deflate(def, zipout, src, null, wrok, true, ze);
+   if (wrok)zipout.putEntry(ze);
+   if (!wrok || drc.remaining() < size)
+    drc = RC.newbuf(size);
+   buf = zipout.deflate(def, src, drc, wrok, ze);
   } finally {
    ObjectPool.free(def);
   }
-  buf = tryWrite(buf, ze);
+  if (wrok)return null;
+  if (this.wrok.getAndSet(true)) {
+   zipout.putEntry(ze);
+   zipout.write(buf);
+   return null;
+  }
   return buf;
- }
- public static ByteBuffer deflate(LibdeflateCompressor def, ZipEntryOutput out, ByteBuffer src, ByteBuffer old, boolean wrok, boolean is, ZipEntryM ze) throws IOException {
-  int readlen=src.remaining();
-  ze.size = readlen;
-  int pos=src.position();
-  if (RC.zip_crc && !ze.notFix)
-   ze.crc(src, pos, readlen);
-  if (wrok)out.putEntry(ze);
-  ByteBuffer buf=out.buf;
-  int size=LibdeflateJavaUtils.getBufSize(readlen, 0);
-  if (!wrok || buf.remaining() < size) {
-   if (!wrok)ze.notFix = true;
-   buf = old == null || old.capacity() < size ?old = RC.newbuf(is ?size: BufOutput.tableSizeFor(size)): old;
-  }
-  int zpos=buf.position();
-  int outlen=def.compress(src, buf);
-  if ((out.flag & out.AsInput) == 0 && outlen >= readlen) {
-   ze.mode = 0;
-   src.position(pos);
-   buf.position(zpos);
-   buf = src;
-   outlen = readlen;
-  }
-  ze.csize = outlen;
-  if (wrok)out.releaseBuf(buf, outlen);
-  //如果输入的buf允许偏移，这没有必要
-  /*else{
-   buf.limit(buf.position());
-   buf.position(zpos);
-   }*/
-  else buf.flip();
-  return is ? (wrok ?null: buf): old;
  }
  public final static int CPU=Runtime.getRuntime().availableProcessors();
  public final static ExecutorService pool=new ForkJoinPool(CPU + 1);
