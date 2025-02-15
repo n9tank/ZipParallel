@@ -7,7 +7,9 @@ import java.nio.CharBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 
 public class NioReader extends Reader {
  public CharsetDecoder decode;
@@ -37,7 +39,7 @@ public class NioReader extends Reader {
   this(read, RC.newDbuf(size), set);
  }
  public NioReader(ReadableByteChannel read, ByteBuffer bytebuf, Charset set) {
-  decode = set.newDecoder();
+  decode = ZipUtil.decode(set);
   io = read;
   buf = bytebuf;
   if (read != null)buf.limit(0);

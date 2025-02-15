@@ -10,10 +10,8 @@ public class BufOutput implements BufIo {
  }
  ByteBuffer buf;
  public BufOutput(int size) {
-  size = size & 0x7fffffff;
-  if (size > 0) {
+  if (size > 0)
    buf = RC.newDbuf(size);
-  }
  }
  public static final int tableSizeFor(int cap) {  
   int n = cap - 1;  

@@ -46,12 +46,9 @@ public class ZipEntryM {
  }
  public int encode(CharsetEncoder en, ByteBuffer out) {
   int pos=out.position();
-  CharBuffer buf=CharBuffer.wrap(name);
-  en.encode(buf, out, true);
+  en.encode(CharBuffer.wrap(name), out, true);
   en.flush(out);
-  int len = out.position() - pos;
-  out.limit(out.capacity());
   en.reset();
-  return len;
+  return out.position() - pos;
  }
 }

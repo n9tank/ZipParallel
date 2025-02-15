@@ -1,10 +1,11 @@
 package org.libDeflate;
+import java.io.IOException;
 import java.io.Writer;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
-import java.io.IOException;
+import java.nio.charset.CodingErrorAction;
 
 public class BufWriter extends Writer {
  public void write(char[] cbuf, int off, int len) throws IOException {
@@ -43,6 +44,6 @@ public class BufWriter extends Writer {
  public CharsetEncoder en;
  public BufWriter(BufIo out, Charset set) {
   buf = out;
-  en = set.newEncoder();
+  en = ZipUtil.encode(set);
  }
 }

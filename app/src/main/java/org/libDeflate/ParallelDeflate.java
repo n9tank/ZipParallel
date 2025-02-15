@@ -24,6 +24,10 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    io = out;
    zip = ze;
   }
+  public DeflateWriter(ByteBuffer buf, ZipEntryM ze) {
+   outbuf = buf;
+   zip = ze;
+  }
   public DeflateWriter(Path out, ZipEntryM ze) {
    fc = out;
    zip = ze;
@@ -49,11 +53,10 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
     if (wroking = !wrok.getAndSet(true))
      join();
     else {
+     ByteBuffer outbuf=this.outbuf;
      ZipEntryM zip=this.zip;
-     int mode=zip.mode;
      tag:
-     if (mode > 0) {
-      ByteBuffer outbuf=this.outbuf;
+     if (outbuf == null && zip.mode > 0) {
       IoWriter wt=io;
       if (!RC.zip_addFile || wt != null) {
        if (wt.out != null)
@@ -64,8 +67,8 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
       this.outbuf = outbuf;
      }
      if (wroking = !wrok.getAndSet(true))
-      list.offer(this);
-     else join();
+      join();
+     else list.offer(this);
     }
    } catch (Throwable e) {
     on.onError(e);
@@ -80,34 +83,31 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   ConcurrentLinkedQueue<DeflateWriter> list=this.list;
   AtomicBoolean wrok=this.wrok;
   do{
-   if (list != null) {
-    DeflateWriter def;
-    while ((def = list.poll()) != null) {
-     try {
-      def.join();
-     } catch (Throwable e) {
-      on.onError(e);
-     }
+   DeflateWriter def;
+   while ((def = list.poll()) != null) {
+    try {
+     def.join();
+    } catch (Throwable e) {
+     on.onError(e);
     }
    }
    wrok.set(false);
   }while(!list.isEmpty() && !wrok.getAndSet(true));
  }
  public void end() {
-  ObjectPool.inflateGc();
-  ObjectPool.deflateGc();
   try {
    zipout.close();
   } catch (Exception e) {
    on.onError(e);
   }
+  ObjectPool.inflateGc();
+  ObjectPool.deflateGc();
  }
  public void close() {
-  if (true) {
+  if (!RC.zip_close_async) {
    on.pop();
    return;
   }
-  //也许你需要close方法不堵塞，不过没有大大意义
   LongAdder io=on.io;
   io.decrement();
   if (io.sum() < 0) {
@@ -216,12 +216,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   zipEntry en=input.en;
   if (en.csize >= en.size)zip.mode = 0;
   raw = (raw && en.mode > 0 && zip.mode > 0) || (en.mode == 0 && zip.mode == 0);
-  with(input, zip, raw);
-  int size=(int)en.size;
-  if (raw || en.mode <= 0) {
-   if (!RC.zip_read_mmap)size |= 0x80000000;
-   else size = 0x80000000;
+  if (raw && (RC.zip_read_mmap || RC.zip_read_all))
+   on.add(new DeflateWriter(input.zip.getBuf(en), zip));
+  else {
+   input.bufSize =(int)en.size;
+   with(input, zip, raw);
   }
-  input.bufSize = size;
  }
 }

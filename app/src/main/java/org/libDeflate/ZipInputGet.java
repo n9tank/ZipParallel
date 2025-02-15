@@ -9,17 +9,7 @@ import java.nio.charset.Charset;
 public class ZipInputGet extends IoWriter {
  public void flush() throws Exception {
   BufIo out=this.out;
-  if (RC.zip_read_mmap) {
-   if (bufSize < 0) {
-    ByteBuffer buf=zip.getBuf(en);
-    if (out instanceof BufOutput) {
-     ((BufOutput)out).buf = buf;
-     buf.position(buf.limit());
-    } else out.write(buf);
-    return;
-   }
-  }
-  ReadableByteChannel reader=io();
+  ReadableByteChannel reader=zip.open(en);
   try {
    ByteBuffer buf=out.getBuf();
    int i;
@@ -35,18 +25,14 @@ public class ZipInputGet extends IoWriter {
    reader.close();
   }
  }
- public ReadableByteChannel io() throws IOException {
-  zipEntry en=this.en;
-  if (bufSize < 0)return zip.openChannel(en);
-  return zip.open(zip.getBuf(en));
- }
  public static BufferedReader reader(zipFile zip, zipEntry en, Charset set) throws IOException  {
   int size=(int) Math.min(en.size, 8192);
   NioReader read;
-  if (!RC.zip_read_mmap) {
-   if (en.mode > 0) 
-    read = new NioReader(zip.open(zip.getBuf(en)), ByteBuffer.allocate(size), set);
-   else read = new NioReader(zip.openChannel(en), (int)Math.min(en.size, 65536l), set);
+  if (!RC.zip_read_mmap && !RC.zip_read_all) {
+   ReadableByteChannel io=zip.open(en);
+   if (en.mode > 0)
+    read = new NioReader(io, ByteBuffer.allocate(size), set);
+   else read = new NioReader(io, (int)Math.min(en.size, 65536l), set);
   } else {
    ByteBuffer buf=zip.getBuf(en);
    if (en.mode > 0) 

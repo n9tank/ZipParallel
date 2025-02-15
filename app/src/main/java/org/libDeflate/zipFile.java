@@ -19,6 +19,8 @@ import java.util.zip.ZipException;
 import me.steinborn.libdeflate.LibdeflateDecompressor;
 import me.steinborn.libdeflate.ObjectPool;
 import java.nio.MappedByteBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
 
 public class zipFile implements AutoCloseable {
  public FileChannel rnio;
@@ -81,6 +83,10 @@ public class zipFile implements AutoCloseable {
   long pos=getPos(ze);
   return readBlock(pos, size);
  }
+ public ReadableByteChannel open(final zipEntry en) throws IOException {
+  if (en.mode <= 0)return openBlock(en);
+  return open(getBuf(en));
+ }
  public void close() throws IOException {
   ObjectPool.inflateGc();
   if (RC.zip_zlib)InflatePool.inflateGc();
@@ -102,34 +108,7 @@ public class zipFile implements AutoCloseable {
    }
   };
  }
- public static class FileBlockChannel implements ReadableByteChannel {
-  public FileChannel fc;
-  public long pos;
-  public long rem;
-  public FileBlockChannel(FileChannel ch, long off, long size) throws IOException {
-   fc = ch;
-   pos = off;
-   rem = size;
-  }
-  public void close() {}
-  public boolean isOpen() {
-   return true;
-  }
-  public int read(ByteBuffer buf) throws IOException {
-   long rem=this.rem;
-   if (rem <= 0)
-    return -1;
-   long pos=this.pos;
-   int size=(int)Math.min(rem, buf.remaining());
-   buf.limit(buf.position() + size);
-   this.pos = pos + size;
-   this.rem = rem - size;
-   int len=fc.read(buf, pos);
-   buf.limit(buf.capacity());
-   return len;
-  };
- }
- public ReadableByteChannel openChannel(zipEntry ze) throws IOException {
+ public ReadableByteChannel openBlock(zipEntry ze) throws IOException {
   return new FileBlockChannel(rnio, getPos(ze), ze.csize);
  }
  public static InputStream warp(final ReadableByteChannel ch) {
@@ -147,7 +126,7 @@ public class zipFile implements AutoCloseable {
   };
  }
  public InputStream openStream(zipEntry ze) throws IOException {
-  return warp(openChannel(ze));
+  return warp(openBlock(ze));
  }
  public InputStream openEntry(final zipEntry ze) throws IOException {
   final InputStream input= openStream(ze);
@@ -258,8 +237,8 @@ public class zipFile implements AutoCloseable {
   }
   HashMap map=new HashMap(centot << 2 / 3);
   this.ens = map;
-  Charset utf8=StandardCharsets.UTF_8;
-  Charset encode=this.encode;
+  CharsetDecoder utf8=ZipUtil.decode(StandardCharsets.UTF_8);
+  CharsetDecoder encode=ZipUtil.decode(this.encode);
   cenlen -= 46;
   while (off <= cenlen) {
    off += 8;

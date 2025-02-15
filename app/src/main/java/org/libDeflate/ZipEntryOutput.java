@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
 import me.steinborn.libdeflate.LibdeflateJavaUtils;
+import java.nio.charset.Charset;
 
 
 public class ZipEntryOutput extends ByteBufIo {
@@ -133,10 +134,10 @@ public class ZipEntryOutput extends ByteBufIo {
  public ZipEntryM entry;
  public int flag=1;
  public CharsetEncoder charsetEncoder;
- public CharsetEncoder utf8=StandardCharsets.UTF_8.newEncoder();
+ public CharsetEncoder utf8=ZipUtil.encode(StandardCharsets.UTF_8);
  public ZipEntryOutput(File out) throws IOException {
   this(out.toPath());
- }
+ } 
  public ByteBuffer deflate(LibdeflateCompressor def, ByteBuffer src, ByteBuffer drc, boolean wrok, ZipEntryM ze) throws IOException {
   int srcpos=src.position();
   int srclen=src.remaining();
@@ -172,16 +173,17 @@ public class ZipEntryOutput extends ByteBufIo {
   //文件模式需要支持并发写出，鸽了。
   this(out, RC.NSIZE, null);
  }
- public ZipEntryOutput(Path fs, int size, CharsetEncoder utf) throws IOException {
+ public ZipEntryOutput(Path fs, int size, Charset utf) throws IOException {
   this(FileChannel.open(fs, StandardOpenOption.CREATE, StandardOpenOption.WRITE), size, utf);
   outFile = fs;
  }
  public ZipEntryOutput(WritableByteChannel wt) {
   this(wt, RC.NSIZE, null);
  }
- public ZipEntryOutput(WritableByteChannel wt, int size, CharsetEncoder utf) {
+ public ZipEntryOutput(WritableByteChannel wt, int size, Charset utf) {
   super(wt, size);
-  charsetEncoder = utf;
+  if (utf != null)
+   charsetEncoder = ZipUtil.encode(utf);
  }
  public int pos;
  public ByteBuffer getBuf() {
