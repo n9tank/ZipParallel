@@ -12,6 +12,8 @@ public class RC {
    ByteBuffer.allocate(size):
    ByteBuffer.allocateDirect(size);
  }
+ public static final int IOSIZE=8192;
+ public static final boolean sawp_ram=false;
  public static final boolean zip_close_async=false;
  public static final boolean zip_deflate_io=false;
  public static final boolean zip_read_mmap=true;

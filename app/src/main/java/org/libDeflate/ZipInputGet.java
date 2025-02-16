@@ -12,12 +12,17 @@ public class ZipInputGet extends IoWriter {
   ReadableByteChannel reader=zip.open(en);
   try {
    ByteBuffer buf=out.getBuf();
-   int i=1;
+   int i=0;
+   gotoa:
    while (true) {
-    while (i > 0)
-     i = reader.read(buf);
-    if (i == -1)break;
-    buf = out.getBufFlush();
+    while (i >= 0) {
+     do{
+      i = reader.read(buf);
+     }while(i > 0);
+     if (i == -1)
+      break gotoa;
+     buf = out.getBufFlush();
+    }
     //这个更新值可以用于处理输入不合法的情况
     i = reader.read(buf);
     if (i == -1)break;

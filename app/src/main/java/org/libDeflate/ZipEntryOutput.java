@@ -6,6 +6,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,7 +16,6 @@ import java.util.ArrayList;
 import me.steinborn.libdeflate.LibdeflateCRC32;
 import me.steinborn.libdeflate.LibdeflateCompressor;
 import me.steinborn.libdeflate.LibdeflateJavaUtils;
-import java.nio.charset.Charset;
 
 
 public class ZipEntryOutput extends ByteBufIo {
@@ -173,7 +173,6 @@ public class ZipEntryOutput extends ByteBufIo {
   }
   return drc;
  }
- //强烈推荐至少64K缓存，此缓存不会尝试动态扩容，因此需要尽可能的大
  public ZipEntryOutput(Path out) throws IOException {
   //文件模式需要支持并发写出，鸽了。
   this(out, RC.NSIZE, null);
@@ -196,6 +195,14 @@ public class ZipEntryOutput extends ByteBufIo {
   pos = buf.position();
   return buf;
  }
+ //如果扩容缓冲会增长字节数的话，当前没必要
+ /*
+ public ByteBuffer moveBuf() {
+  int pos=buf.position();
+  upLength(pos - this.pos);
+  this.pos = pos;
+  return super.moveBuf();
+ }*/
  public void end() {
   upLength(buf.position() - pos);
  }

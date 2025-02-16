@@ -1,10 +1,9 @@
 package org.libDeflate;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.WritableByteChannel;
 import java.nio.channels.FileChannel;
+import java.nio.channels.WritableByteChannel;
 
 public class ByteBufIo implements BufIo {
  public boolean isOpen() {
@@ -75,8 +74,22 @@ public class ByteBufIo implements BufIo {
   }
   return buf;
  }
- //对齐PAGESIZE写入会稍微提升一些性能，我不知道这是为什么。
- //猜测是内核态看到用户空间的数据是对齐的，没有其他线程的竞争条件下，不会复制到内核空间。
+ public void swap(ByteBuffer put) {
+  try {
+   if (put.isDirect())
+    put.arrayOffset();
+   else return;
+  } catch (Exception e) {
+   return ;
+  }
+  int drclen= put.capacity() & RC.PAGESIZE_N4096;
+  if (drclen > buf.capacity()) {
+   put.rewind();
+   put.limit(drclen);
+   put = put.slice();
+   this.buf = put;
+  }
+ }
  public int write(ByteBuffer put) throws IOException {
   int len=put.remaining();
   int limt=put.limit();

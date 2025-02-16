@@ -38,6 +38,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    if (outf != null) {
     out.putEntry(zip);
     out.write(outf);
+    if (RC.sawp_ram)out.swap(outf);
     return;
    }
    IoWriter wt=io;
@@ -137,6 +138,8 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    if (!wrok || drc.remaining() < size)
     drc = RC.newDbuf(size);
    buf = zipout.deflate(def, src, drc, wrok, ze);
+   if (RC.sawp_ram && wrok && drc != zipout.buf)
+    zipout.swap(drc);
   } finally {
    ObjectPool.free(def);
   }
@@ -219,7 +222,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   if (raw && (RC.zip_read_mmap || RC.zip_read_all))
    on.add(new DeflateWriter(input.zip.getBuf(en), zip));
   else {
-   input.bufSize =(int)en.size;
+   input.bufSize = (int)en.size;
    with(input, zip, raw);
   }
  }
