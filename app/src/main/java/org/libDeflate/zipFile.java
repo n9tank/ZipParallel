@@ -5,10 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.WritableByteChannel;
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -18,9 +19,6 @@ import java.util.zip.InflaterInputStream;
 import java.util.zip.ZipException;
 import me.steinborn.libdeflate.LibdeflateDecompressor;
 import me.steinborn.libdeflate.ObjectPool;
-import java.nio.MappedByteBuffer;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CharsetEncoder;
 
 public class zipFile implements AutoCloseable {
  public FileChannel rnio;
@@ -82,6 +80,60 @@ public class zipFile implements AutoCloseable {
   int size=(int)ze.csize;
   long pos=getPos(ze);
   return readBlock(pos, size);
+ }
+ public static ReadableByteChannel openCopyChannel(final ByteBuffer buf, final long size) {
+  final LibdeflateDecompressor inflate=ObjectPool.allocInfalte(0);
+  return new ReadableByteChannel(){
+   public long rem=size;
+   public ByteBuffer tmp;
+   public void close() {
+    ObjectPool.free(inflate);
+   }
+   public boolean isOpen() {
+    return true;
+   }
+   public int read(ByteBuffer dst) throws IOException {
+    if (!buf.hasRemaining())return -1;
+    int rems=dst.remaining();
+    if (rems <= 0)return 0;
+    gotoa:
+    while (true) {
+     ByteBuffer tmp=this.tmp;
+     if (tmp != null) {
+      if (tmp.hasRemaining()) {
+       int size=tmp.limit();
+       int ret=Math.min(rems, size);
+       tmp.limit(tmp.position() + ret);
+       dst.put(tmp);
+       tmp.limit(size);
+       return ret;
+      }
+     }
+     ByteBuffer drc=dst;
+     if (rems < rem) {
+      drc = tmp;
+      if (drc == null)
+       this.tmp = drc = RC.newbuf((int)Math.min(rem, RC.COPYSIZE));
+      drc.clear();
+     }
+     do{
+      int ret=inflate.decompress(buf, drc);
+      if (drc == dst)
+       if (ret >= 0) {
+        rem -= ret;
+        return ret;
+       } else if (ret >= 0) {
+        rem -= ret;
+        drc.flip();
+        if (ret == 0)
+         return ret;
+        continue gotoa;
+       } else if (ret < 0)
+        this.tmp = drc = BufOutput.copy(drc, drc.capacity() << 1);
+     }while(true);
+    }
+   }
+  };
  }
  public ReadableByteChannel open(final zipEntry en) throws IOException {
   if (en.mode <= 0)return openBlock(en);

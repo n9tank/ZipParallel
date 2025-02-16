@@ -65,7 +65,7 @@ public class ByteBufIo implements BufIo {
  public ByteBuffer getBuf(int page) throws IOException {
   ByteBuffer buf=this.buf;
   int len=buf.remaining();
-  if (len == 0) {
+  if (len <= 0) {
    flush();
    len = buf.capacity();
   }
@@ -75,23 +75,26 @@ public class ByteBufIo implements BufIo {
   }
   return buf;
  }
+ //对齐PAGESIZE写入会稍微提升一些性能，我不知道这是为什么。
+ //猜测是内核态看到用户空间的数据是对齐的，没有其他线程的竞争条件下，不会复制到内核空间。
  public int write(ByteBuffer put) throws IOException {
   int len=put.remaining();
   int limt=put.limit();
   ByteBuffer buf=this.buf;
   if (len >= buf.capacity()) {
    int pos=buf.position();
+   int wlen=len;
    if (pos > 0) {
     pos &= RC.PAGESIZE_4095;
     if (pos > 0) {
      int rem=RC.PAGESIZE_N4096 - pos;
-     len -= rem;
+     wlen -= rem;
      put.limit(put.position() + rem);
      buf.put(put);
     }
     flush();
    }
-   put.limit(put.position() + (len & RC.PAGESIZE_N4096));
+   put.limit(put.position() + (wlen & RC.PAGESIZE_N4096));
    WritableByteChannel wt=this.wt;
    while (put.hasRemaining())
     wt.write(put);
