@@ -104,7 +104,7 @@ public class zipFile implements AutoCloseable {
    public int read(ByteBuffer dst) throws IOException {
     if (!buf.hasRemaining())return -1;
     if (!dst.hasRemaining())return 0;
-    return inflate.decompress(buf, dst) & 0x7fffffff;
+    return inflate.decompress(buf, dst);
    }
   };
  }

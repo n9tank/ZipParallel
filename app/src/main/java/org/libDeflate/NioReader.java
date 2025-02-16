@@ -69,14 +69,23 @@ public class NioReader extends Reader {
      if (eof)
       break;
      buf.compact();
+     boolean isfirst=true;
      int size;
      do {
       size = io.read(buf);
-      if (size < 0) {
+      if (size == -1) {
        io.close();
        this.io = null;
        eof = true;
+      } else if (isfirst && size < 0) {
+       //实际上返回 Integer.MIN_VALUE;
+       //&0x7ffffff 返回0
+       //为了一些特殊情况这样写的，如果空间不够，仍有部分输入和消耗字节的话能够兼容
+       this.buf = buf = BufOutput.copy(buf, buf.capacity() << 1);
+       size = 1;
+       continue;
       }
+      isfirst = false;
      }while (size > 0);
      buf.flip();
     }

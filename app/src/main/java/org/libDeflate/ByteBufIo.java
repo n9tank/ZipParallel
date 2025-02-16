@@ -37,7 +37,19 @@ public class ByteBufIo implements BufIo {
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
-  flush();
+  int pos=buf.position();
+  buf.rewind();
+  buf.limit(pos & RC.PAGESIZE_N4096);
+  WritableByteChannel wt=this.wt;
+  while (buf.hasRemaining())
+   wt.write(buf);
+  buf.limit(pos);
+  buf.compact();
+  return buf;
+ }
+ public ByteBuffer moveBuf() {
+  ByteBuffer buf=this.buf;
+  this.buf = buf = BufOutput.copyD(buf, buf.capacity() << 1);
   return buf;
  }
  public void end() {

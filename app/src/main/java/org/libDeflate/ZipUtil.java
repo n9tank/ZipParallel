@@ -12,7 +12,7 @@ public class ZipUtil {
  //这个不属于标准库，所以性能啥的咱不管
  public static final ZipEntryM newEntry(String name, int lvl) {
   ZipEntryM zip= new ZipEntryM(name, lvl);
-  zip.notFix = true;
+  if (RC.zip_crc)zip.notFix = true;
   return zip;
  }
  public static CharsetEncoder encode(Charset set) {

@@ -12,31 +12,34 @@ public class ZipInputGet extends IoWriter {
   ReadableByteChannel reader=zip.open(en);
   try {
    ByteBuffer buf=out.getBuf();
-   int i;
+   int i=1;
    while (true) {
-    do {
+    while (i > 0)
      i = reader.read(buf);
-    }while(i > 0);
-    if (i < 0)break;
-    out.getBufFlush();
+    if (i == -1)break;
+    buf = out.getBufFlush();
+    //这个更新值可以用于处理输入不合法的情况
+    i = reader.read(buf);
+    if (i == -1)break;
+    if (i < 0)
+     buf = out.moveBuf();
    }
    out.end();
   } finally {
    reader.close();
   }
  }
- public static BufferedReader reader(zipFile zip, zipEntry en, Charset set) throws IOException  {
-  int size=(int) Math.min(en.size, 8192);
-  NioReader read;
+ public static BufferedReader reader(zipFile zip, zipEntry en, Charset set) throws IOException  {  NioReader read;
+  int size=(int)Math.min(en.size, 8192);
   if (!RC.zip_read_mmap && !RC.zip_read_all) {
    ReadableByteChannel io=zip.open(en);
    if (en.mode > 0)
-    read = new NioReader(io, ByteBuffer.allocate(size), set);
+    read = new NioReader(io, RC.newbuf(size), set);
    else read = new NioReader(io, (int)Math.min(en.size, 65536l), set);
   } else {
    ByteBuffer buf=zip.getBuf(en);
    if (en.mode > 0) 
-    read = new NioReader(zip.open(buf), ByteBuffer.allocate(size), set);
+    read = new NioReader(zip.open(buf), RC.newbuf(size), set);
    else read = new NioReader(null, buf, set);
   }
   return new BufferedReader(read, size);

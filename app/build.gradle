@@ -5,8 +5,8 @@ plugins {
 android {
 namespace 'org.libDeflate'
     compileSdkVersion 33
-    buildToolsVersion "35.0.0"	
-
+    buildToolsVersion "35.0.0"
+	
     defaultConfig {
         //applicationId "com.example.application"
         minSdkVersion 26
@@ -28,8 +28,20 @@ namespace 'org.libDeflate'
         }
     }
 }
-
+repositories {
+flatDir {
+dirs "../../app/libs"
+}
+}
 dependencies {
+api ":app-release"
 implementation(name: 'app-release', ext: 'aar')
-implementation fileTree(dir: "libs", include: ["*.jar"])
+}
+task moveReleaseOutput(type: Exec) {
+    commandLine 'mv', '/sdcard/AppProjects/rwmodProtect/rwmodP/lib/build/outputs/aar/lib-release.aar', '/sdcard/AppProjects/rwmodProtect/rwmodP/app/libs/lib-release.aar'
+}
+tasks.whenTaskAdded { task ->
+    if (task.name == 'bundleReleaseAar') {
+        task.finalizedBy(moveReleaseOutput)
+    }
 }
