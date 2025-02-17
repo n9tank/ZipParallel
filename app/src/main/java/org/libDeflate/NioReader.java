@@ -7,9 +7,7 @@ import java.nio.CharBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
-import java.nio.charset.CodingErrorAction;
 
 public class NioReader extends Reader {
  public CharsetDecoder decode;
@@ -69,24 +67,18 @@ public class NioReader extends Reader {
      if (eof)
       break;
      buf.compact();
-     boolean isfirst=true;
      int size;
-     do {
+     while (true) {
       size = io.read(buf);
-      if (size == -1) {
+      if (size == 0)
+       break;
+      if (size < 0) {
        io.close();
        this.io = null;
        eof = true;
-      } else if (isfirst && size < 0) {
-       //实际上返回 Integer.MIN_VALUE;
-       //&0x7ffffff 返回0
-       //为了一些特殊情况这样写的，如果空间不够，仍有部分输入和消耗字节的话能够兼容
-       this.buf = buf = BufOutput.copy(buf, buf.capacity() << 1);
-       size = 1;
-       continue;
+       break;
       }
-      isfirst = false;
-     }while (size > 0);
+     }
      buf.flip();
     }
    }
