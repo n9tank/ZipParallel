@@ -5,7 +5,6 @@ import java.nio.channels.WritableByteChannel;
 
 public interface BufIo extends WritableByteChannel {
  public ByteBuffer getBuf();
- public ByteBuffer moveBuf();
  public ByteBuffer getBufFlush() throws IOException;
- public void end();
+ public void end(); 
 }

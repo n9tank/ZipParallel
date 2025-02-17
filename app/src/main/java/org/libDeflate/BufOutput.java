@@ -5,16 +5,12 @@ import java.nio.channels.WritableByteChannel;
 
 
 public class BufOutput implements BufIo {
- public ByteBuffer moveBuf() {
-  return getBufFlush();
- }
  public boolean isOpen() {
   return true;
  }
  public ByteBuffer buf;
  public BufOutput(int size) {
-  if (size > 0)
-   buf = RC.newDbuf(size);
+  buf = RC.newDbuf(size);
  }
  public static final int tableSizeFor(int cap) {  
   int n = cap - 1;  
@@ -47,13 +43,15 @@ public class BufOutput implements BufIo {
  }
  public void end() {}
  public int write(ByteBuffer src) {
-  int len=src.remaining();
-  ByteBuffer buf=this.buf;
-  int limt=buf.remaining() - len;
-  if (len > limt)
-   this.buf = buf = copyD(buf, tableSizeFor(buf.position() + len));
-  buf.put(src);
-  return len;
+  if (RC.zip_deflate_io) {
+   int len=src.remaining();
+   ByteBuffer buf=this.buf;
+   int limt=buf.remaining() - len;
+   if (len > limt)
+    this.buf = buf = copyD(buf, tableSizeFor(buf.position() + len));
+   buf.put(src);
+   return len;
+  } else return 0;
  }
  public void close() {}
 }

@@ -28,6 +28,7 @@ namespace 'org.libDeflate'
         }
     }
 }
+//本地导入arr
 repositories {
 flatDir {
 dirs "../../app/libs"
@@ -35,8 +36,10 @@ dirs "../../app/libs"
 }
 dependencies {
 api ":app-release"
-implementation(name: 'app-release', ext: 'aar')
+//这个请删掉
+//implementation(name: 'app-release', ext: 'aar')
 }
+/*
 task moveReleaseOutput(type: Exec) {
     commandLine 'mv', '/sdcard/AppProjects/rwmodProtect/rwmodP/lib/build/outputs/aar/lib-release.aar', '/sdcard/AppProjects/rwmodProtect/rwmodP/app/libs/lib-release.aar'
 }
@@ -44,4 +47,4 @@ tasks.whenTaskAdded { task ->
     if (task.name == 'bundleReleaseAar') {
         task.finalizedBy(moveReleaseOutput)
     }
-}
+}*/
