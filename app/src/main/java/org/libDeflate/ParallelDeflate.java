@@ -219,10 +219,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   zipEntry en=input.en;
   if (en.csize >= en.size)zip.mode = 0;
   raw = (raw && en.mode > 0 && zip.mode > 0) || (en.mode == 0 && zip.mode == 0);
-  if (raw && (RC.zip_read_mmap || RC.zip_read_all))
+  if (raw && RC.zip_read_mmap)
    on.add(new DeflateWriter(input.zip.getBuf(en), zip));
   else {
-   input.bufSize = (int)en.size;
+   if (RC.zip_read_mmap || !raw)
+    input.bufSize = (int)en.size;
    with(input, zip, raw);
   }
  }

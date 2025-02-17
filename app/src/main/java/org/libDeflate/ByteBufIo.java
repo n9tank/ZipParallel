@@ -46,13 +46,13 @@ public class ByteBufIo implements BufIo {
   buf.compact();
   return buf;
  }
+ /*
  public ByteBuffer moveBuf() {
   ByteBuffer buf=this.buf;
   this.buf = buf = BufOutput.copyD(buf, buf.capacity() << 1);
   return buf;
- }
- public void end() {
- }
+ }*/
+ public void end(){}
  public void flush() throws IOException {
   ByteBuffer buf=this.buf;
   buf.flip();

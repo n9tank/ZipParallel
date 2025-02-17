@@ -81,85 +81,107 @@ public class zipFile implements AutoCloseable {
   long pos=getPos(ze);
   return readBlock(pos, size);
  }
- public static ReadableByteChannel openCopyChannel(final ByteBuffer buf, final long size) {
+ public ByteBuffer unBuf(zipEntry ze) throws IOException {
+  ByteBuffer buf= getBuf(ze);
+  if (ze.mode <= 0)return buf;
+  ByteBuffer drc=RC.newbuf((int)ze.size);
+  unBuf(buf, drc);
+  return drc;
+ }
+ public static void unBuf(ByteBuffer src, ByteBuffer drc) throws IOException {
+  LibdeflateDecompressor inflate=ObjectPool.allocInfalte(0);
+  try {
+   //while (src.hasRemaining()) {
+   int i=inflate.decompress(src, drc);
+   if (i < 0)throw new IOException();
+   //}
+  } finally {
+   ObjectPool.free(inflate);
+  }
+  drc.flip();
+ }
+ //当前版本libDeflate解压不支持流，经管提供了流的api
+ /*
+  public static ReadableByteChannel openCopyChannel(final ByteBuffer buf, final long size) {
   final LibdeflateDecompressor inflate=ObjectPool.allocInfalte(0);
   return new ReadableByteChannel(){
-   public long rem=size;
-   public ByteBuffer tmp;
-   public void close() {
-    ObjectPool.free(inflate);
-   }
-   public boolean isOpen() {
-    return true;
-   }
-   public int read(ByteBuffer dst) throws IOException {
-    if (!buf.hasRemaining())return -1;
-    int rems=dst.remaining();
-    if (rems <= 0)return 0;
-    gotoa:
-    while (true) {
-     ByteBuffer tmp=this.tmp;
-     if (tmp != null) {
-      if (tmp.hasRemaining()) {
-       int size=tmp.limit();
-       int ret=Math.min(rems, size);
-       tmp.limit(tmp.position() + ret);
-       dst.put(tmp);
-       tmp.limit(size);
-       return ret;
-      }
-     }
-     ByteBuffer drc=dst;
-     if (rems < rem) {
-      drc = tmp;
-      if (drc == null)
-       this.tmp = drc = RC.newbuf((int)Math.min(rem, RC.COPYSIZE));
-      drc.clear();
-     }
-     do{
-      int ret=inflate.decompress(buf, drc);
-      if (drc == dst)
-       if (ret >= 0) {
-        rem -= ret;
-        return ret;
-       } else if (ret >= 0) {
-        rem -= ret;
-        drc.flip();
-        if (ret == 0)
-         return ret;
-        continue gotoa;
-       } else if (ret < 0)
-        this.tmp = drc = BufOutput.copy(drc, drc.capacity() << 1);
-     }while(true);
-    }
-   }
+  public long rem=size;
+  public ByteBuffer tmp;
+  public void close() {
+  ObjectPool.free(inflate);
+  }
+  public boolean isOpen() {
+  return true;
+  }
+  public int read(ByteBuffer dst) throws IOException {
+  if (!buf.hasRemaining())return -1;
+  int rems=dst.remaining();
+  if (rems <= 0)return 0;
+  gotoa:
+  while (true) {
+  ByteBuffer tmp=this.tmp;
+  if (tmp != null) {
+  if (tmp.hasRemaining()) {
+  int size=tmp.limit();
+  int ret=Math.min(rems, size);
+  tmp.limit(tmp.position() + ret);
+  dst.put(tmp);
+  tmp.limit(size);
+  return ret;
+  }
+  }
+  ByteBuffer drc=dst;
+  if (rems < rem) {
+  drc = tmp;
+  if (drc == null)
+  this.tmp = drc = RC.newbuf((int)Math.min(rem, RC.COPYSIZE));
+  drc.clear();
+  }
+  do{
+  int ret=inflate.decompress(buf, drc);
+  if (drc == dst)
+  if (ret >= 0) {
+  rem -= ret;
+  return ret;
+  } else if (ret >= 0) {
+  rem -= ret;
+  drc.flip();
+  if (ret == 0)
+  return ret;
+  continue gotoa;
+  } else if (ret < 0)
+  this.tmp = drc = BufOutput.copy(drc, drc.capacity() << 1);
+  }while(true);
+  }
+  }
   };
- }
- public ReadableByteChannel open(final zipEntry en) throws IOException {
+  }
+  public ReadableByteChannel open(final zipEntry en) throws IOException {
   if (en.mode <= 0)return openBlock(en);
   return open(getBuf(en));
- }
+  }*/
  public void close() throws IOException {
   ObjectPool.inflateGc();
   if (RC.zip_zlib)InflatePool.inflateGc();
   rnio.close();
  }
- public static ReadableByteChannel open(final ByteBuffer buf) {
+ /*
+  public static ReadableByteChannel open(final ByteBuffer buf) {
   final LibdeflateDecompressor inflate=ObjectPool.allocInfalte(0);
   return new ReadableByteChannel(){
-   public void close() {
-    ObjectPool.free(inflate);
-   }
-   public boolean isOpen() {
-    return true;
-   }
-   public int read(ByteBuffer dst) throws IOException {
-    if (!buf.hasRemaining())return -1;
-    if (!dst.hasRemaining())return 0;
-    return inflate.decompress(buf, dst);
-   }
+  public void close() {
+  ObjectPool.free(inflate);
+  }
+  public boolean isOpen() {
+  return true;
+  }
+  public int read(ByteBuffer dst) throws IOException {
+  if (!buf.hasRemaining())return -1;
+  if (!dst.hasRemaining())return 0;
+  return inflate.decompress(buf, dst);
+  }
   };
- }
+  }*/
  public ReadableByteChannel openBlock(zipEntry ze) throws IOException {
   return new FileBlockChannel(rnio, getPos(ze), ze.csize);
  }

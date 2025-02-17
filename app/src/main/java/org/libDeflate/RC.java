@@ -17,7 +17,6 @@ public class RC {
  public static final boolean zip_close_async=false;
  public static final boolean zip_deflate_io=false;
  public static final boolean zip_read_mmap=true;
- public static final boolean zip_read_all=true;
  public static final int COPYSIZE=1024 * 16;
  public static final int MMAPSIZE=1024 * 64;
  public static final int DSIZE=1024 * 64;

@@ -5,9 +5,10 @@ import java.nio.channels.WritableByteChannel;
 
 
 public class BufOutput implements BufIo {
+ /*
  public ByteBuffer moveBuf() {
   return getBufFlush();
- }
+ }*/
  public boolean isOpen() {
   return true;
  }

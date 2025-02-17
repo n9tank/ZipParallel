@@ -34,11 +34,12 @@ public class ZipEntryOutput extends ByteBufIo {
     return io.getBuf();
    return null;
   }
+  /*
   public ByteBuffer moveBuf() {
    if (RC.zip_crc)
     return io.moveBuf();
    return null;
-  }
+  }*/
   public void Crc() {
    if (!RC.zip_crc)return;
    ZipEntryOutput zip=ZipEntryOutput.this;
