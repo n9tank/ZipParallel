@@ -9,7 +9,7 @@ public class ZipEntryM {
  public byte mode;
  public CharSequence name;
  public int csize;
- public int size;
+ public int size=-1;
  public int crc;
  public int xdostime;
  public long start;

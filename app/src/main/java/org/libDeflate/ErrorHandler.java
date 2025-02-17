@@ -14,16 +14,17 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.ArrayDeque;
 
 public class ErrorHandler {
- public ConcurrentLinkedQueue<Future> flist;
+ public volatile ConcurrentLinkedQueue<Future> flist;
  public ExecutorService pool;
  public LongAdder io=new LongAdder();
- public Vector<Throwable> err=new Vector();
+ public Vector<Throwable> err;
  public UIPost ui;
  public Canceler can;
- public ErrorHandler(ExecutorService pool, Canceler can) {
+ public ErrorHandler(ExecutorService pool, Canceler can, Vector list) {
   this.pool = pool;
   this.can = can;
   this.flist = new ConcurrentLinkedQueue();
+  this.err = list;
  }
  public void add(Callable call) throws IOException {
   if (iscancel())throw new IOException();

@@ -1,8 +1,6 @@
 package org.libDeflate;
-import java.io.OutputStream;
-import java.nio.channels.WritableByteChannel;
-import java.io.BufferedWriter;
-import java.nio.charset.Charset;
+import java.io.*;
+import java.nio.charset.*;
 
 public abstract class IoWriter {
  public int bufSize;

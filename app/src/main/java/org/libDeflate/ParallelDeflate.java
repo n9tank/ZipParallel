@@ -1,18 +1,11 @@
 package org.libDeflate;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.LongAdder;
-import me.steinborn.libdeflate.LibdeflateCompressor;
-import me.steinborn.libdeflate.LibdeflateJavaUtils;
-import me.steinborn.libdeflate.ObjectPool;
+import java.io.*;
+import java.nio.*;
+import java.nio.channels.*;
+import java.nio.file.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+import me.steinborn.libdeflate.*;
 
 public class ParallelDeflate implements AutoCloseable,Canceler {
  public class DeflateWriter implements Callable {
@@ -69,7 +62,10 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
      }
      if (wroking = !wrok.getAndSet(true))
       join();
-     else list.offer(this);
+     else {
+	  list.offer(this);
+	  wroking = !wrok.getAndSet(true);
+	 }
     }
    } catch (Throwable e) {
     on.onError(e);
@@ -86,11 +82,11 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   do{
    DeflateWriter def;
    while ((def = list.poll()) != null) {
-    try {
-     def.join();
-    } catch (Throwable e) {
-     on.onError(e);
-    }
+	try {
+	 def.join();
+	} catch (Throwable e) {
+	 on.onError(e);
+	}
    }
    wrok.set(false);
   }while(!list.isEmpty() && !wrok.getAndSet(true));
@@ -101,7 +97,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   } catch (Exception e) {
    on.onError(e);
   }
-  ObjectPool.inflateGc();
   ObjectPool.deflateGc();
  }
  public void close() {
@@ -123,7 +118,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void cancel() {
   if (!on.cancel())return;
-  ObjectPool.inflateGc();
   ObjectPool.deflateGc();
   zipout.cancel();
   return;
@@ -155,6 +149,7 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   zipout = out;
   list = new ConcurrentLinkedQueue();
   wrok = new AtomicBoolean();
+  ObjectPool.deflateNum.increment();
  }
  public ByteBuffer write(IoWriter io, boolean iswrok, ZipEntryM zip) throws Exception {
   BufOutput buf;
@@ -172,6 +167,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   if (buf != null) {
    ByteBuffer bytebuf=buf.buf;
    bytebuf.flip();
+   if (!zipout.asInput() && bytebuf.limit() <= 4) {
+    zip.mode = 0;
+    if (iswrok)
+     zipout.write(bytebuf);
+    return bytebuf;
+   }
    return deflate(bytebuf, iswrok, zip);
   }
   return null;
@@ -217,12 +218,14 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void writeToZip(ZipInputGet input, ZipEntryM zip, boolean raw) throws Exception {
   zipEntry en=input.en;
-  if (en.csize >= en.size)zip.mode = 0;
+  if (en.csize >= en.size || en.size <= 4)
+   zip.mode = 0;
   raw = (raw && en.mode > 0 && zip.mode > 0) || (en.mode == 0 && zip.mode == 0);
-  if (raw && (RC.zip_read_mmap || RC.zip_read_all))
+  if (raw && RC.zip_read_mmap)
    on.add(new DeflateWriter(input.zip.getBuf(en), zip));
   else {
-   input.bufSize = (int)en.size;
+   if (RC.zip_read_mmap || !raw)
+    input.bufSize = (int)en.size;
    with(input, zip, raw);
   }
  }
