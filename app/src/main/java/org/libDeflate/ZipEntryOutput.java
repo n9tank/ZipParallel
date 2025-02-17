@@ -34,11 +34,6 @@ public class ZipEntryOutput extends ByteBufIo {
     return io.getBuf();
    return null;
   }
-  public ByteBuffer moveBuf() {
-   if (RC.zip_crc)
-    return io.moveBuf();
-   return null;
-  }
   public void Crc() {
    if (!RC.zip_crc)return;
    ZipEntryOutput zip=ZipEntryOutput.this;
@@ -137,12 +132,15 @@ public class ZipEntryOutput extends ByteBufIo {
  public long headOff;
  public Path outFile;
  public ZipEntryM entry;
- public int flag=1;
+ public int flag=RC.zip_asInput ? 1: 0;
  public CharsetEncoder charsetEncoder;
  public CharsetEncoder utf8=ZipUtil.encode(StandardCharsets.UTF_8);
  public ZipEntryOutput(File out) throws IOException {
   this(out.toPath());
  } 
+ public boolean asInput() {
+  return RC.zip_asInput && (this.flag & this.AsInput) > 0;
+ }
  public ByteBuffer deflate(LibdeflateCompressor def, ByteBuffer src, ByteBuffer drc, boolean wrok, ZipEntryM ze) throws IOException {
   int srcpos=src.position();
   int srclen=src.remaining();
@@ -153,7 +151,7 @@ public class ZipEntryOutput extends ByteBufIo {
   int outlen=def.compress(src, drc);
   src.position(srcpos);
   boolean isbig;
-  if (isbig = ((this.flag & this.AsInput) == 0 && outlen >= srclen)) {
+  if (isbig = (!asInput() && outlen >= srclen)) {
    ze.mode = 0;
    outlen = srclen;
   }
@@ -195,21 +193,15 @@ public class ZipEntryOutput extends ByteBufIo {
   pos = buf.position();
   return buf;
  }
- //如果扩容缓冲会增长字节数的话，当前没必要
- /*
- public ByteBuffer moveBuf() {
-  int pos=buf.position();
-  upLength(pos - this.pos);
-  this.pos = pos;
-  return super.moveBuf();
- }*/
  public void end() {
   upLength(buf.position() - pos);
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
   upLength(buf.position() - pos);
-  super.getBufFlush();
+  if (RC.getflush_pagesize)
+   super.getBufFlush();
+  else flush();
   pos = 0;
   return buf;
  }
@@ -265,17 +257,18 @@ public class ZipEntryOutput extends ByteBufIo {
    if (ze.mode <= 0)
     ze.size = size;
    ze.csize = size;
-   if ((flag & AsInput) > 0) {
+   if (asInput())
     writeEntryFix(ze);
-   }
    entry = null;
   }
  }
  public void putEntryOnlyIn(ZipEntryM zip) throws IOException {
   closeEntry();
-  entry = zip;  
-  zip.start = off;
-  writeEntry(zip);
+  entry = zip;
+  if (asInput() || zip.size != 0 || !zip.notFix) {
+   zip.start = off;
+   writeEntry(zip);
+  }
   last = off;
  }
  public void putEntry(ZipEntryM zip) throws IOException {
@@ -290,7 +283,7 @@ public class ZipEntryOutput extends ByteBufIo {
   boolean skip;
   CharsetEncoder charsetEncoder=this.charsetEncoder;
   int size=30;
-  if ((flag & AsInput) > 0) {
+  if (asInput()) {
    if (utf8 = zip.utf(charsetEncoder))
     charsetEncoder = this.utf8;
    size += charsetEncoder.maxBytesPerChar() * zip.name.length();
@@ -366,7 +359,7 @@ public class ZipEntryOutput extends ByteBufIo {
   int flag=this.flag;
   buff.putShort((short)0);//ver 该值没有任何作用
   boolean enmode=(flag & this.enmode) > 0;
-  boolean input=(flag & AsInput) > 0;
+  boolean input=asInput();
   boolean ensize=!need && !input;
   buff.putShort(ensize ?0: globalBit((!zip.notFix && input && !(wt instanceof FileChannel)), utf8));
   buff.putShort((short)(ensize ?0: !enmode && mode <= 0 ?0: 8));

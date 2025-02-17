@@ -172,6 +172,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   if (buf != null) {
    ByteBuffer bytebuf=buf.buf;
    bytebuf.flip();
+   if (!zipout.asInput() && bytebuf.limit() <= 4) {
+    zip.mode = 0;
+    if (iswrok)
+     zipout.write(bytebuf);
+    return bytebuf;
+   }
    return deflate(bytebuf, iswrok, zip);
   }
   return null;
@@ -217,12 +223,14 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
  }
  public void writeToZip(ZipInputGet input, ZipEntryM zip, boolean raw) throws Exception {
   zipEntry en=input.en;
-  if (en.csize >= en.size)zip.mode = 0;
+  if (en.csize >= en.size || en.size <= 4)
+   zip.mode = 0;
   raw = (raw && en.mode > 0 && zip.mode > 0) || (en.mode == 0 && zip.mode == 0);
-  if (raw && (RC.zip_read_mmap || RC.zip_read_all))
+  if (raw && RC.zip_read_mmap)
    on.add(new DeflateWriter(input.zip.getBuf(en), zip));
   else {
-   input.bufSize = (int)en.size;
+   if (RC.zip_read_mmap || !raw)
+    input.bufSize = (int)en.size;
    with(input, zip, raw);
   }
  }

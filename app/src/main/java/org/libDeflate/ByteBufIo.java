@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.MappedByteBuffer;
 
 public class ByteBufIo implements BufIo {
  public boolean isOpen() {
@@ -36,23 +37,19 @@ public class ByteBufIo implements BufIo {
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
-  int pos=buf.position();
-  buf.rewind();
-  buf.limit(pos & RC.PAGESIZE_N4096);
-  WritableByteChannel wt=this.wt;
-  while (buf.hasRemaining())
-   wt.write(buf);
-  buf.limit(pos);
-  buf.compact();
+  if (RC.getflush_pagesize) {
+   int pos=buf.position();
+   buf.rewind();
+   buf.limit(pos & RC.PAGESIZE_N4096);
+   WritableByteChannel wt=this.wt;
+   while (buf.hasRemaining())
+    wt.write(buf);
+   buf.limit(pos);
+   buf.compact();
+  } else flush();
   return buf;
  }
- public ByteBuffer moveBuf() {
-  ByteBuffer buf=this.buf;
-  this.buf = buf = BufOutput.copyD(buf, buf.capacity() << 1);
-  return buf;
- }
- public void end() {
- }
+ public void end() {}
  public void flush() throws IOException {
   ByteBuffer buf=this.buf;
   buf.flip();
@@ -75,13 +72,8 @@ public class ByteBufIo implements BufIo {
   return buf;
  }
  public void swap(ByteBuffer put) {
-  try {
-   if (put.isDirect())
-    put.arrayOffset();
-   else return;
-  } catch (Exception e) {
+  if (!put.isDirect() || (put instanceof MappedByteBuffer))
    return ;
-  }
   int drclen= put.capacity() & RC.PAGESIZE_N4096;
   if (drclen > buf.capacity()) {
    put.rewind();
