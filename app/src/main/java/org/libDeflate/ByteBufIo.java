@@ -5,6 +5,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.*;
 
 public class ByteBufIo implements BufIo {
  public boolean isOpen() {
@@ -37,16 +38,7 @@ public class ByteBufIo implements BufIo {
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
-  if (RC.getflush_pagesize) {
-   int pos=buf.position();
-   buf.rewind();
-   buf.limit(pos & RC.PAGESIZE_N4096);
-   WritableByteChannel wt=this.wt;
-   while (buf.hasRemaining())
-    wt.write(buf);
-   buf.limit(pos);
-   buf.compact();
-  } else flush();
+  flush();
   return buf;
  }
  public void end() {}
@@ -71,45 +63,23 @@ public class ByteBufIo implements BufIo {
   }
   return buf;
  }
- public void swap(ByteBuffer put) {
-  if (!put.isDirect() || (put instanceof MappedByteBuffer))
-   return ;
-  int drclen= put.capacity() & RC.PAGESIZE_N4096;
-  if (drclen > buf.capacity()) {
-   put.rewind();
-   put.limit(drclen);
-   put = put.slice();
-   this.buf = put;
-  }
- }
- 
  public int write(ByteBuffer put) throws IOException {
   int len=put.remaining();
   ByteBuffer buf=this.buf;
-  int rem=buf.position() & RC.PAGESIZE_4095;
-  if (rem > 0)rem = RC.PAGESIZE - rem;
-  int wlen=(len - rem) & RC.PAGESIZE_N4096;
-  if (wlen >= buf.capacity()) {
-   int limt=put.limit();
-   put.limit(put.position() + rem);
-   buf.put(put);
+  if (len >= buf.capacity()){
    flush();
-   put.limit(put.position() + wlen);
-   WritableByteChannel wt=this.wt;
    while (put.hasRemaining())
-    wt.write(put);
+	wt.write(put);
+   return len;
+  }
+  int limt=put.limit();
+  int rem=buf.remaining();
+  put.limit(Math.min(put.position() + rem, limt));
+  buf.put(put);
+  if (len >= rem){
+   flush();
    put.limit(limt);
    buf.put(put);
-  } else {
-   wlen = len;
-   do{
-	rem = Math.min(wlen, buf.remaining());
-	wlen -= rem;
-	put.limit(put.position() + rem);
-	buf.put(put);
-	if (!buf.hasRemaining())
-	 flush();
-   }while(wlen > 0);
   }
   return len;
  }

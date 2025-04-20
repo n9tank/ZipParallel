@@ -193,15 +193,17 @@ public class ZipEntryOutput extends ByteBufIo {
   pos = buf.position();
   return buf;
  }
+ public void flush() throws IOException{
+  getBuf();
+  getBufFlush();
+ }
  public void end() {
   upLength(buf.position() - pos);
  }
  public ByteBuffer getBufFlush() throws IOException {
   ByteBuffer buf=this.buf;
   upLength(buf.position() - pos);
-  if (RC.getflush_pagesize)
-   super.getBufFlush();
-  else flush();
+  super.flush();
   pos = 0;
   return buf;
  }
@@ -311,17 +313,12 @@ public class ZipEntryOutput extends ByteBufIo {
   return bit;
  }
  public void writeEntryFix(ZipEntryM zip) throws IOException {
-  int size=zip.size;
-  if (zip.notFix || size <= 0)return;
-  ByteBuffer buf=this.buf;
-  if (buf.remaining() < 16) {
-   buf = ByteBuffer.allocate(16);
-   buf.order(ByteOrder.LITTLE_ENDIAN);
-  }
+  if (zip.notFix)return;
+  ByteBuffer buf=getBuf(16);
   buf.putInt(0x08074b50);
   buf.putInt(zip.crc);
   buf.putInt(zip.csize);
-  buf.putInt(size);
+  buf.putInt(zip.size);
   releaseBuf(buf, 16);
  }
  public void finish() throws IOException {
@@ -361,7 +358,7 @@ public class ZipEntryOutput extends ByteBufIo {
   boolean enmode=(flag & this.enmode) > 0;
   boolean input=asInput();
   boolean ensize=!need && !input;
-  buff.putShort(ensize ?0: globalBit((!zip.notFix && input && !(wt instanceof FileChannel)), utf8));
+  buff.putShort(ensize ?0: globalBit(!zip.notFix && input, utf8));
   buff.putShort((short)(ensize ?0: !enmode && mode <= 0 ?0: 8));
   buff.putInt(!RC.zip_time || ensize || enmode ?0: zip.xdostime);
   buff.putInt(ensize ?0: enmode ?0xff: zip.crc);

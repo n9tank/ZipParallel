@@ -31,7 +31,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    if (outf != null) {
     out.putEntry(zip);
     out.write(outf);
-    if (RC.sawp_ram)out.swap(outf);
     return;
    }
    IoWriter wt=io;
@@ -132,8 +131,6 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
    if (!wrok || drc.remaining() < size)
     drc = RC.newDbuf(size);
    buf = zipout.deflate(def, src, drc, wrok, ze);
-   if (RC.sawp_ram && wrok && drc != zipout.buf)
-    zipout.swap(drc);
   } finally {
    ObjectPool.free(def);
   }
@@ -193,9 +190,9 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
   //经常mmap还是有比较高的代价的
   ZipEntryOutput data=zipout;
   if (working)data.putEntry(zip);
-  ByteBuffer mmap=RC.zip_read_mmap && (RC.MMAPSIZE <= 0 || size >= RC.MMAPSIZE) ?nio.map(FileChannel.MapMode.READ_ONLY, 0, size): null;
   try {
    if (zip.mode > 0) {
+	ByteBuffer mmap=RC.zip_read_mmap && (RC.MMAPSIZE <= 0 || size >= RC.MMAPSIZE) ?nio.map(FileChannel.MapMode.READ_ONLY, 0, size): null;
     if (mmap == null) {
      mmap = RC.newDbuf((int)size);
      nio.read(mmap);
@@ -203,13 +200,12 @@ public class ParallelDeflate implements AutoCloseable,Canceler {
     }
     return deflate(mmap, working, zip);
    } else {
-    if (mmap != null) {
-     ZipEntryM en= data.entry;
-     if (RC.zip_crc && !en.notFix)
-      en.crc(mmap, mmap.position(), mmap.limit());
-     //不推荐在mmap模型下启用crc，无法保证操作系统何时进行换页
-     data.write(mmap);
-    } else data.copyFromAndCrc32(nio);
+	if(!RC.zip_crc||zip.notFix){
+	 data.flush();
+	 nio.transferTo(0,size,data.wt);
+	 data.upLength(size);
+	}else
+	 data.copyFromAndCrc32(nio);
    }
   } finally {
    nio.close();

@@ -22,6 +22,7 @@ public class InflatePool {
   inflatePool.add(ctx);
  }
  public static void inflateGc() {
+  LongAdder inflaterNum=InflatePool.inflaterNum;
   inflaterNum.decrement();
   if (inflaterNum.sum() <= 0){
    ConcurrentLinkedQueue<Inflater> list=inflatePool;
